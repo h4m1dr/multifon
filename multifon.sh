@@ -62,34 +62,68 @@ pause() {
     read -n1 -s -r -p $'🔁 Press any key to return to menu...'
 }
 
-# Placeholder functions
+# Psiphon Installation submenu
 install_psiphon() {
-    echo -e "${BLUE}Starting Psiphon Installation Menu...${RESET}"
-    pause
-}
+    while true; do
+        clear
+        # لوگو اینجا نیست چون خودت داری
+        echo -e "${YELLOW}${BOLD}╭───────────────────────────────╮${RESET}"
+        echo -e "${YELLOW}${BOLD}│      ${WHITE}Psiphon Installation Menu${YELLOW}      │${RESET}"
+        echo -e "${YELLOW}${BOLD}╰───────────────────────────────╯${RESET}"
 
-install_firejail() {
-    echo -e "${BLUE}Installing Firejail...${RESET}"
-    pause
-}
+        if [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+            echo -e "${GREEN}Psiphon is installed.${RESET}"
+        else
+            echo -e "${RED}Psiphon is NOT installed.${RESET}"
+        fi
 
-create_folder() {
-    if [[ "$1" == "yes" ]]; then
-        echo -e "${GREEN}Creating folder with Firejail...${RESET}"
-    else
-        echo -e "${YELLOW}Creating folder WITHOUT Firejail... (Not recommended)${RESET}"
-    fi
-    pause
-}
+        echo ""
+        echo -e " ${CYAN}[1]${RESET} Automatic Global Installation (plinstaller2)"
+        echo -e " ${CYAN}[2]${RESET} Manual Installation (Archive)"
+        echo -e " ${CYAN}[3]${RESET} Update to Latest Version"
+        echo -e " ${CYAN}[4]${RESET} Uninstall Psiphon"
+        echo -e " ${CYAN}[5]${RESET} Delete Psiphon Files Only (without uninstall)"
+        echo -e " ${CYAN}[6]${RESET} Back to Main Menu"
+        echo ""
 
-show_instances() {
-    echo -e "${CYAN}Listing running Psiphon instances (simulated)...${RESET}"
-    pause
-}
+        read -p $'\e[1;33mSelect an option [1-6]: \e[0m' ps_opt
 
-cleanup_options() {
-    echo -e "${RED}Cleanup Options (folders / firejail configs)...${RESET}"
-    pause
+        case "$ps_opt" in
+            1)
+                echo -e "${BLUE}Starting automatic installation...${RESET}"
+                # دستور نصب اتوماتیک
+                echo "(Placeholder) Running plinstaller2 script..."
+                pause
+                ;;
+            2)
+                echo -e "${BLUE}Starting manual installation...${RESET}"
+                echo "(Placeholder) Manual install from archive..."
+                pause
+                ;;
+            3)
+                echo -e "${BLUE}Updating Psiphon to latest version...${RESET}"
+                echo "(Placeholder) Update process..."
+                pause
+                ;;
+            4)
+                echo -e "${RED}Uninstalling Psiphon completely...${RESET}"
+                echo "(Placeholder) Uninstall Psiphon..."
+                pause
+                ;;
+            5)
+                echo -e "${YELLOW}Deleting only Psiphon files...${RESET}"
+                echo "(Placeholder) Delete files only..."
+                pause
+                ;;
+            6)
+                break
+                ;;
+            *)
+                echo -e "${RED}❌ Invalid option. Try again.${RESET}"
+                pause
+                ;;
+        esac
+    done
 }
 
 # Start main loop
