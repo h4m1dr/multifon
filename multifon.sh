@@ -28,6 +28,17 @@ echo ""
 
 # status and location count
 
+# Color codes
+RED='\e[91m'
+GREEN='\e[92m'
+YELLOW='\e[93m'
+BLUE='\e[94m'
+MAGENTA='\e[95m'
+CYAN='\e[96m'
+WHITE='\e[97m'
+BOLD='\e[1m'
+RESET='\e[0m'
+
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
@@ -109,15 +120,111 @@ cleanup_options() {
 }
 
 install_psiphon_menu() {
-    echo -e "${YELLOW}install_psiphon_menu is not implemented yet.${RESET}"
-    pause
+    local installed="No"
+    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+        installed="Yes"
+    fi
+
+    while true; do
+        clear
+        echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
+        echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
+        echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
+        echo ""
+        echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
+        echo ""
+        echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+        echo ""
+
+        echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
+        echo ""
+        echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
+        echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
+        echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+
+        echo ""
+        read -p "Select an option [0-6]: " ps_opt
+        case "$ps_opt" in
+            1)
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Skipping installation.${RESET}"
+                else
+                    if [[ -f ./plinstaller2 ]]; then
+                        echo -e "${BLUE}Found existing plinstaller2, using local copy...${RESET}"
+                        sudo bash plinstaller2
+                    else
+                        echo -e "${BLUE}Downloading and running automatic installer...${RESET}"
+                        wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
+                        sudo bash plinstaller2 && rm -f plinstaller2
+                    fi
+                fi
+                pause
+                ;;
+            2)
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
+                else
+                    echo -e "${BLUE}Running manual installation...${RESET}"
+                    git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
+                    cd ~/PsiphonLinux/archive && \
+                    chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                fi
+                pause
+                ;;
+            3)
+                latest_url="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
+                temp_file="/tmp/psiphon-latest"
+                wget -q -O "$temp_file" "$latest_url"
+                if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
+                    echo -e "${GREEN}Already up to date.${RESET}"
+                    rm -f "$temp_file"
+                else
+                    echo -e "${BLUE}Updating to latest version...${RESET}"
+                    sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
+                    sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                fi
+                pause
+                ;;
+            4)
+                if ! [[ -x "/usr/bin/psiphon" ]] && ! [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is not installed.${RESET}"
+                else
+                    echo -e "${RED}Uninstalling Psiphon...${RESET}"
+                    wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
+                    sudo bash pluninstaller && rm -f pluninstaller
+                fi
+                pause
+                ;;
+            5)
+                echo -e "${RED}Removing core files...${RESET}"
+                sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
+                pause
+                ;;
+            6)
+                echo -e "${YELLOW}Removing only extra installer files...${RESET}"
+                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
+                pause
+                ;;
+            0)
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid option, please try again.${RESET}"
+                pause
+                ;;
+        esac
+    done
 }
 
 # Main loop
 clear
+logo
 check_status
 while true; do
-    logo
     main_menu
     echo ""
     read -p "Select an option [0-6]: " opt
