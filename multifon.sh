@@ -33,8 +33,17 @@ pause() {
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
 
+pause() {
+    echo ""
+    read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
+}
+
 check_status() {
-    [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]] && psi_status="${GREEN}✓ Installed${RESET}" || psi_status="${RED}✗ Not Found${RESET}"
+    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+        psi_status="${GREEN}✓ Installed${RESET}"
+    else
+        psi_status="${RED}✗ Not Found${RESET}"
+    fi
     [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
     loc_count=$(find "$HOME/psiphon/" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l)
 
@@ -43,7 +52,7 @@ check_status() {
     echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
     echo ""
     echo -e " System Check:"
-    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon-tunnel-core-x86_64)${RESET}"
+    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon or /usr/bin/psiphon-tunnel-core-x86_64)${RESET}"
     echo -e " - Firejail installed: ${fj_status}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
@@ -68,8 +77,8 @@ install_psiphon() {
         echo -e "${CYAN}${BOLD}Psiphon Installation Menu${RESET}"
         echo -e "Source: https://github.com/SpherionOS/PsiphonLinux"
 
-        if [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-            echo -e "Installed: ${GREEN}Yes${RESET} (${CYAN}/usr/bin/psiphon-tunnel-core-x86_64${RESET})"
+        if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+            echo -e "Installed: ${GREEN}Yes${RESET}"
         else
             echo -e "Installed: ${RED}No${RESET}"
         fi
@@ -101,10 +110,8 @@ install_psiphon() {
                 ;;
             3)
                 echo -e "${BLUE}Downloading latest Psiphon binary...${RESET}"
-                cd /usr/bin/ && \
-                sudo rm -f psiphon-tunnel-core-x86_64 && \
-                sudo wget -q https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64 && \
-                sudo chmod +x psiphon-tunnel-core-x86_64
+                sudo wget -q -O /usr/bin/psiphon-tunnel-core-x86_64 https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64 && \
+                sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
                 pause
                 ;;
             4)
@@ -115,8 +122,8 @@ install_psiphon() {
                 ;;
             5)
                 echo -e "${RED}Removing core files...${RESET}"
-                sudo rm -f /usr/bin/psiphon-tunnel-core-x86_64
-                sudo rm -rf /etc/psiphon
+                sudo find /usr/bin /etc $HOME -type f -name "psiphon*" -exec rm -f {} +
+                sudo find /usr/bin /etc $HOME -type f -name "plinstaller2" -exec rm -f {} +
                 pause
                 ;;
             0)
