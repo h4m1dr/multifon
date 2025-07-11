@@ -21,7 +21,7 @@ echo -e "██╔████╔██║██║   ██║██║   █�
 echo -e "██║╚██╔╝██║██║   ██║██║   ██║██║        ██║   ██║██╔══╝  ██║   ██║██║╚██╗██║"
 echo -e "██║ ╚═╝ ██║╚██████╔╝╚██████╔╝███████╗   ██║   ██║██║     ╚██████╔╝██║ ╚████║"
 echo -e "╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═══╝"
-echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}github.com/SpherionOS/PsiphonLinux${RESET}"
+echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}#Psiphon Source: SpherionOS${RESET}"
 echo ""
 }
 
