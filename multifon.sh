@@ -80,28 +80,29 @@ install_psiphon_menu() {
         installed="Yes"
     fi
 
-    clear
-    echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
-    echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
-    echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
-    echo ""
-    echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
-    echo ""
-    echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
-    echo ""
+    while true; do
+        clear
+        echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
+        echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
+        echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
+        echo ""
+        echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
+        echo ""
+        echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+        echo ""
 
-    echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
-    echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
-    echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
-    echo ""
-    echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
-    echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
-    echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
-    echo ""
-    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
+        echo ""
+        echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
+        echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
+        echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
 
-    echo ""
-    read -p "Select an option [0-6]: " ps_opt
+        echo ""
+        read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
             1)
                 if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
@@ -173,6 +174,7 @@ install_psiphon_menu() {
         esac
     done
 }
+
 
 create_folder_with_firejail() {
     mkdir -p "$HOME/psiphon"
