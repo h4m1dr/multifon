@@ -225,6 +225,7 @@ clear
 logo
 check_status
 while true; do
+    clear
     main_menu
     echo ""
     read -p "Select an option [0-6]: " opt
