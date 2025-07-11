@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# colors
+# رنگ‌ها
 RED='\e[91m'
 GREEN='\e[92m'
 YELLOW='\e[93m'
@@ -11,19 +11,20 @@ WHITE='\e[97m'
 BOLD='\e[1m'
 RESET='\e[0m'
 
-# Multi Psiphon logo
+# لوگوی مولتی سایفون (الهام گرفته از GamingVPN)
 logo() {
 clear
 echo -e "${CYAN}${BOLD}"
-echo -e "███╗   ███╗ ██████╗ ██╗   ██╗██╗     ████████╗██╗███████╗ ██████╗ ███╗   ██╗"
-echo -e "████╗ ████║██╔═══██╗██║   ██║██║     ╚══██╔══╝██║██╔════╝██╔═══██╗████╗  ██║"
-echo -e "██╔████╔██║██║   ██║██║   ██║██║        ██║   ██║█████╗  ██║   ██║██╔██╗ ██║"
-echo -e "██║╚██╔╝██║██║   ██║██║   ██║██║        ██║   ██║██╔══╝  ██║   ██║██║╚██╗██║"
-echo -e "██║ ╚═╝ ██║╚██████╔╝╚██████╔╝███████╗   ██║   ██║██║     ╚██████╔╝██║ ╚████║"
-echo -e "╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═══╝"
-echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}#Psiphon Source: SpherionOS${RESET}"
+echo -e "███╗   ███╗ ██████╗ ██╗   ██╗██╗   ████████╗██╗ ███████╗ ██████╗ ███╗   ██╗"
+echo -e "████╗ ████║██╔═══██╗██║   ██║██║   ╚══██╔══╝██║ ██╔════╝██╔═══██╗████╗  ██║"
+echo -e "██╔████╔██║██║   ██║██║   ██║██║      ██║   ██║ █████╗  ██║   ██║██╔██╗ ██║"
+echo -e "██║╚██╔╝██║██║   ██║██║   ██║██║      ██║   ██║ ██╔══╝  ██║   ██║██║╚██╗██║"
+echo -e "██║ ╚═╝ ██║╚██████╔╝╚██████╔╝███████╗ ██║   ██║ ██║     ╚██████╔╝██║ ╚████║"
+echo -e "╚═╝     ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝ ╚═╝   ╚═╝ ╚═╝      ╚═════╝ ╚═╝  ╚═══╝"
+echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}github.com/SpherionOS/PsiphonLinux${RESET}"
 echo ""
 }
+
 
 # status and location count
 check_status() {
@@ -109,5 +110,3 @@ while true; do
         *) echo -e "${RED}❌ Invalid option. Please try again.${RESET}"; pause ;;
     esac
 done
-
-
