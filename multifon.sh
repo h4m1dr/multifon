@@ -21,7 +21,7 @@ echo -e "██╔████╔██║██║   ██║██║     █
 echo -e "██║╚██╔╝██║██║   ██║██║     ██║   ██║ ██╔══╝  ██║   ██║██║╚██╗██║"
 echo -e "██║ ╚═╝ ██║╚██████╔╝███████╗██║   ██║ ██║     ╚██████╔╝██║ ╚████║"
 echo -e "╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝   ╚═╝ ╚═╝      ╚═════╝ ╚═╝  ╚═══╝"
-echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}github.com/SpherionOS/PsiphonLinux${RESET}"
+echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${WHITE}Source: Psiphon SpherionOS ${RESET}"
 echo ""
 }
 
@@ -57,14 +57,14 @@ check_status() {
 }
 
 main_menu() {
-    echo -e "Main Menu:\n"
-    echo -e " 1) Psiphon Installation Menu (Approx 20 MB)    #Source: SpherionOS"
-    echo -e " 2) Install Firejail (Approx 5.5 MB)"
-    echo -e " 3) Create Psiphon Folder with Firejail"
-    echo -e " 4) Create Psiphon Folder without Firejail    #Not recommended for multi-location use"
-    echo -e " 5) Show Running Psiphon Instances"
-    echo -e " 6) Cleanup Options"
-    echo -e "\n 0) Exit"
+    echo -e "${BLUE}Main Menu:${RESET}\n"
+    echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
+    echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
+    echo -e "${BLUE} 3) Create Psiphon Folder with Firejail${RESET}"
+    echo -e "${BLUE} 4) Create Psiphon Folder without Firejail ${RED}#Not recommended for multi-location use${RESET}"
+    echo -e "${BLUE} 5) Show Running Psiphon Instances${RESET}"
+    echo -e "${BLUE} 6) Cleanup Options${RESET}"
+    echo -e "\n${BLUE} 0) Exit${RESET}"
 }
 
 install_firejail() {
@@ -73,30 +73,35 @@ install_firejail() {
     pause
 }
 
-install_psiphon() {
-    while true; do
-        clear
-        echo -e "${CYAN}${BOLD}Psiphon Installation Menu${RESET}"
-        echo -e "Source: https://github.com/SpherionOS/PsiphonLinux"
 
-        if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-            echo -e "Installed: ${GREEN}Yes${RESET}"
-        else
-            echo -e "Installed: ${RED}No${RESET}"
-        fi
+install_psiphon_menu() {
+    local installed="No"
+    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+        installed="Yes"
+    fi
 
-        echo ""
-        echo -e " 1) Automatic Global Installation (Recommended) (Approx 20 MB)"
-        echo -e " 2) Manual Installation (Outdated Archive) (Approx 20 MB)"
-        echo -e " 3) Latest Binary Download (Approx 20 MB)"
-        echo -e ""
-        echo -e " 4) Uninstall Psiphon (using pluninstaller)"
-        echo -e " 5) Remove Psiphon Core Files (manual wipe)"
-        echo -e " 6) Remove Only Extra Installer Files (safe wipe)"
-        echo -e "\n 0) Back to Main Menu"
-        echo ""
+    clear
+    echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
+    echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
+    echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
+    echo ""
+    echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
+    echo ""
+    echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+    echo ""
 
-        read -p "Select an option [0-6]: " ps_opt
+    echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+    echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+    echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
+    echo ""
+    echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
+    echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
+    echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
+    echo ""
+    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+
+    echo ""
+    read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
             1)
                 if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
