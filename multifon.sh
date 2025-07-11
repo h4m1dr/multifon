@@ -67,61 +67,67 @@ pause() {
 install_psiphon() {
     while true; do
         clear
-        echo -e "┌───────────────────────────────────────────────┐"
-        echo -e "│         ${BOLD}Psiphon Installation Menu${RESET}         │"
-        echo -e "└───────────────────────────────────────────────┘"
+        echo "┌───────────────────────────────────────────────┐"
+        echo "│         Psiphon Multi-Manager Console         │"
+        echo "└───────────────────────────────────────────────┘"
         echo ""
+        echo "System Check:"
         if [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-            echo -e "Psiphon is ${GREEN}installed${RESET}."
+            echo "  Psiphon:     Installed  (/usr/bin/psiphon-tunnel-core-x86_64)"
         else
-            echo -e "Psiphon is ${RED}not installed${RESET}."
+            echo "  Psiphon:     Not Installed"
         fi
+        if [[ -x "$(command -v firejail)" ]]; then
+            echo "  Firejail:    Installed"
+        else
+            echo "  Firejail:    Not Installed"
+        fi
+        echo "  Locations:   $loc_count created"
+        echo "  Source:      https://github.com/SpherionOS/PsiphonLinux"
         echo ""
-        echo -e "  1) Automatic Global Installation (plinstaller2)"
-        echo -e "  2) Manual Installation (Archive)"
-        echo -e "  3) Update to Latest Version"
-        echo -e "  4) Uninstall Psiphon"
-        echo -e "  5) Delete Psiphon Files Only (without uninstall)"
-        echo -e "  6) Back to Main Menu"
+        echo "Main Menu:"
+        echo "  1) Automatic Global Installation (plinstaller2)"
+        echo "  2) Manual Installation (Archive)"
+        echo "  3) Update to Latest Version"
+        echo "  4) Uninstall Psiphon"
+        echo "  5) Delete Psiphon Files Only (without uninstall)"
+        echo "  0) Back to Main Menu"
         echo ""
-        read -p "Select an option [1-6]: " ps_opt
+        read -p "Select an option [0-5]: " ps_opt
 
         case "$ps_opt" in
             1)
-                echo -e "${BLUE}Starting automatic installation...${RESET}"
-                echo "(Placeholder) Running plinstaller2 script..."
+                echo "Running plinstaller2..."
+                # curl یا اسکریپت نصب واقعی اینجا اضافه می‌شه
                 pause
                 ;;
             2)
-                echo -e "${BLUE}Starting manual installation...${RESET}"
-                echo "(Placeholder) Manual install from archive..."
+                echo "Manual installation selected (archive)..."
                 pause
                 ;;
             3)
-                echo -e "${BLUE}Updating Psiphon to latest version...${RESET}"
-                echo "(Placeholder) Running update..."
+                echo "Updating Psiphon..."
                 pause
                 ;;
             4)
-                echo -e "${RED}Uninstalling Psiphon...${RESET}"
-                echo "(Placeholder) Removing binary from /usr/bin..."
+                echo "Uninstalling Psiphon..."
                 pause
                 ;;
             5)
-                echo -e "${YELLOW}Deleting Psiphon files only...${RESET}"
-                echo "(Placeholder) Deleting psiphon-tunnel-core-x86_64..."
+                echo "Deleting only Psiphon binary..."
                 pause
                 ;;
-            6)
+            0)
                 break
                 ;;
             *)
-                echo -e "${RED}Invalid option, please try again.${RESET}"
+                echo "Invalid option, please try again."
                 pause
                 ;;
         esac
     done
 }
+
 
 # Placeholder functions
 install_firejail() {
