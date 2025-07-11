@@ -28,12 +28,10 @@ echo ""
 
 # status and location count
 
-
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
-
 
 check_status() {
     if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
@@ -85,13 +83,12 @@ install_psiphon() {
         echo -e " 2) Manual Installation (Outdated Archive)"
         echo -e " 3) Latest Binary Download"
         echo -e ""
-        echo -e " 4) Uninstall Psiphon (using pluninstaller)"
-        echo -e " 5) Remove Psiphon Core Files (manual wipe)"
-        echo -e " 6) Remove Only Extra Installer Files (safe wipe)"
+        echo -e " 4) Full Uninstall (pluninstaller + core files)"
+        echo -e " 5) Remove Only Extra Installer Files (safe wipe)"
         echo -e "\n 0) Back to Main Menu"
         echo ""
 
-        read -p "Select an option [0-6]: " ps_opt
+        read -p "Select an option [0-5]: " ps_opt
         case "$ps_opt" in
             1)
                 if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
@@ -133,19 +130,15 @@ install_psiphon() {
                 pause
                 ;;
             4)
-                echo -e "${RED}Uninstalling Psiphon...${RESET}"
+                echo -e "${RED}Full uninstall: running pluninstaller and removing core files...${RESET}"
                 wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
                 sudo bash pluninstaller && rm -f pluninstaller
-                pause
-                ;;
-            5)
-                echo -e "${RED}Removing core files...${RESET}"
                 sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
                 pause
                 ;;
-            6)
+            5)
                 echo -e "${YELLOW}Removing only extra installer files...${RESET}"
-                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
+                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" -o -name "pluninstaller.*" \) -exec rm -f {} +
                 pause
                 ;;
             0)
@@ -158,6 +151,7 @@ install_psiphon() {
         esac
     done
 }
+
 
 
 install_firejail() {
