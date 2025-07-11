@@ -205,6 +205,7 @@ cleanup_options() {
 
 while true; do
     clear
+    logo
     check_status
     main_menu
     echo ""
