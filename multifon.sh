@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# colors
+# Colors
 RED='\e[91m'
 GREEN='\e[92m'
 YELLOW='\e[93m'
@@ -28,135 +28,186 @@ echo ""
 
 # status and location count
 
-
-#!/bin/bash
-
-# Colors
-RED='\e[91m'
-GREEN='\e[92m'
-YELLOW='\e[93m'
-BLUE='\e[94m'
-MAGENTA='\e[95m'
-CYAN='\e[96m'
-WHITE='\e[97m'
-BOLD='\e[1m'
-RESET='\e[0m'
-
-# Pause function
 pause() {
     echo ""
-    read -n1 -s -r -p $'\n🔁 Press any key to return to menu...'
+    read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
 
-# System Check
 check_status() {
-    [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]] && psi_status="Yes (/usr/bin/psiphon-tunnel-core-x86_64)" || psi_status="No"
-    [[ -x "$(command -v firejail)" ]] && fj_status="Yes" || fj_status="No"
+    [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]] && psi_status="${GREEN}✓ Installed${RESET}" || psi_status="${RED}✗ Not Found${RESET}"
+    [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
     loc_count=$(find "$HOME/psiphon/" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l)
 
-    echo -e "\n───────────────────────────────"
-    echo -e " Psiphon Multi-Manager Console"
-    echo -e "───────────────────────────────"
-    echo -e "\nSystem Check:"
-    echo -e "- Psiphon installed: ${psi_status}"
-    echo -e "- Firejail installed: ${fj_status}"
-    echo -e "- Number of configured Psiphon locations: ${loc_count}"
-    echo -e "- Psiphon source: https://github.com/SpherionOS/PsiphonLinux"
-    echo -e "───────────────────────────────\n"
+    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
+    echo -e "${WHITE}${BOLD} Psiphon Multi-Manager Console ${RESET}"
+    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
+    echo ""
+    echo -e " System Check:"
+    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon-tunnel-core-x86_64)${RESET}"
+    echo -e " - Firejail installed: ${fj_status}"
+    echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
+    echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
+    echo ""
 }
 
-# Psiphon Installation Menu
+main_menu() {
+    echo -e "Main Menu:\n"
+    echo -e " 1) Psiphon Installation Menu     #Source: SpherionOS"
+    echo -e " 2) Install Firejail"
+    echo -e " 3) Create Psiphon Folder with Firejail"
+    echo -e " 4) Create Psiphon Folder without Firejail    #Not recommended for multi-location use"
+    echo -e " 5) Show Running Psiphon Instances"
+    echo -e " 6) Cleanup Options"
+    echo -e "\n 0) Exit"
+}
+
 install_psiphon() {
     while true; do
         clear
-        echo "Psiphon Installation Menu"
-        echo "Source: https://github.com/SpherionOS/PsiphonLinux"
-        if [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-            echo "Installed: Yes (/usr/bin/psiphon-tunnel-core-x86_64)"
-        else
-            echo "Installed: No"
-        fi
-        echo ""
-        echo "1) Automatic Global Installation (Recommended)"
-        echo "2) Manual Installation (Outdated Archive)"
-        echo "3) Latest Binary Download"
-        echo ""
-        echo "4) Uninstall Psiphon (using pluninstaller)"
-        echo "5) Remove Psiphon Core Files (manual wipe)"
-        echo ""
-        echo "0) Back to Main Menu"
-        echo ""
-        read -p "Select an option [0-5]: " ps_opt
+        echo -e "${CYAN}${BOLD}Psiphon Installation Menu${RESET}"
+        echo -e "Source: https://github.com/SpherionOS/PsiphonLinux"
 
+        if [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+            echo -e "Installed: ${GREEN}Yes${RESET} (${CYAN}/usr/bin/psiphon-tunnel-core-x86_64${RESET})"
+        else
+            echo -e "Installed: ${RED}No${RESET}"
+        fi
+
+        echo ""
+        echo -e " 1) Automatic Global Installation (Recommended)"
+        echo -e " 2) Manual Installation (Outdated Archive)"
+        echo -e " 3) Latest Binary Download"
+        echo -e ""
+        echo -e " 4) Uninstall Psiphon (using pluninstaller)"
+        echo -e " 5) Remove Psiphon Core Files (manual wipe)"
+        echo -e "\n 0) Back to Main Menu"
+        echo ""
+
+        read -p "Select an option [0-5]: " ps_opt
         case "$ps_opt" in
             1)
-                echo "Running plinstaller2..."
-                pause ;;
+                echo -e "${BLUE}Running automatic installer...${RESET}"
+                wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
+                sudo bash plinstaller2 && rm -f plinstaller2
+                pause
+                ;;
             2)
-                echo "Manual installation placeholder..."
-                pause ;;
+                echo -e "${BLUE}Running manual installation...${RESET}"
+                git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
+                cd ~/PsiphonLinux/archive && \
+                chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                pause
+                ;;
             3)
-                echo "Downloading latest binary..."
-                pause ;;
+                echo -e "${BLUE}Downloading latest Psiphon binary...${RESET}"
+                cd /usr/bin/ && \
+                sudo rm -f psiphon-tunnel-core-x86_64 && \
+                sudo wget -q https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64 && \
+                sudo chmod +x psiphon-tunnel-core-x86_64
+                pause
+                ;;
             4)
-                echo "Uninstalling Psiphon..."
-                pause ;;
+                echo -e "${RED}Uninstalling Psiphon...${RESET}"
+                wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
+                sudo bash pluninstaller && rm -f pluninstaller
+                pause
+                ;;
             5)
-                echo "Removing Psiphon files..."
-                pause ;;
+                echo -e "${RED}Removing core files...${RESET}"
+                sudo rm -f /usr/bin/psiphon-tunnel-core-x86_64
+                sudo rm -rf /etc/psiphon
+                pause
+                ;;
             0)
-                break ;;
+                break
+                ;;
             *)
-                echo "Invalid option, please try again."
-                pause ;;
+                echo -e "${RED}Invalid option, please try again.${RESET}"
+                pause
+                ;;
         esac
     done
 }
 
-# Main Menu
-main_menu() {
-    echo "Main Menu:"
-    echo ""
-    echo "1) Psiphon Installation Menu     #Source: SpherionOS"
-    echo "2) Install Firejail"
-    echo "3) Create Psiphon Folder with Firejail"
-    echo "4) Create Psiphon Folder without Firejail    #Not recommended for multi-location use"
-    echo "5) Show Running Psiphon Instances"
-    echo "6) Cleanup Options"
-    echo ""
-    echo "0) Exit"
-    echo ""
+install_firejail() {
+    echo -e "${BLUE}Installing Firejail...${RESET}"
+    sudo apt update && sudo apt install -y firejail
+    pause
 }
 
-# Placeholder functions
-install_firejail() { echo "Installing Firejail..."; pause; }
 create_folder() {
     if [[ "$1" == "yes" ]]; then
-        echo "Creating folder with Firejail..."
+        echo -e "${GREEN}Creating folder with Firejail...${RESET}"
     else
-        echo "Creating folder WITHOUT Firejail... (Not recommended)"
+        echo -e "${YELLOW}Creating folder WITHOUT Firejail...${RESET}"
     fi
     pause
 }
-show_instances() { echo "Listing running Psiphon instances..."; pause; }
-cleanup_options() {
-    echo "Cleanup Options:"
-    echo "1) Stop All Psiphon Instances"
-    echo "2) Remove All Psiphon Folders"
-    echo "3) Remove All Logs"
-    echo "4) Remove Firejail-Only Data (isolated folders etc.)"
-    echo "5) Full Reset (All Psiphon-related content)"
-    echo ""
-    echo "0) Back to Main Menu"
+
+show_instances() {
+    echo -e "${CYAN}Showing running Psiphon instances (simulated)...${RESET}"
     pause
 }
 
-# Main Loop
+cleanup_options() {
+    while true; do
+        clear
+        echo -e "${CYAN}${BOLD}Cleanup Options${RESET}"
+        echo -e "\n 1) Stop All Psiphon Instances"
+        echo -e " 2) Remove All Psiphon Folders"
+        echo -e " 3) Remove All Logs"
+        echo -e " 4) Remove Firejail-Only Data (isolated folders etc.)"
+        echo -e "\n 5) Full Reset (All Psiphon-related content)"
+        echo -e "\n 0) Back to Main Menu"
+        echo ""
+
+        read -p "Select an option [0-5]: " clean_opt
+        case "$clean_opt" in
+            1)
+                echo -e "${BLUE}Stopping all Psiphon instances...${RESET}"
+                pkill -f psiphon-tunnel-core-x86_64
+                pause
+                ;;
+            2)
+                echo -e "${BLUE}Removing all Psiphon folders...${RESET}"
+                rm -rf "$HOME/psiphon/"
+                pause
+                ;;
+            3)
+                echo -e "${BLUE}Removing all logs...${RESET}"
+                find "$HOME/psiphon/" -type f -name "*.log" -delete
+                pause
+                ;;
+            4)
+                echo -e "${BLUE}Removing firejail-only data...${RESET}"
+                rm -rf "$HOME/.config/firejail"
+                pause
+                ;;
+            5)
+                echo -e "${RED}Performing full reset...${RESET}"
+                sudo rm -f /usr/bin/psiphon-tunnel-core-x86_64
+                sudo rm -rf /etc/psiphon
+                rm -rf "$HOME/psiphon/"
+                rm -rf "$HOME/.config/firejail"
+                pause
+                ;;
+            0)
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid option, please try again.${RESET}"
+                pause
+                ;;
+        esac
+    done
+}
+
 while true; do
     clear
-    logo
     check_status
     main_menu
+    echo ""
     read -p "Select an option [0-6]: " opt
     case "$opt" in
         1) install_psiphon ;;
@@ -165,8 +216,7 @@ while true; do
         4) create_folder no ;;
         5) show_instances ;;
         6) cleanup_options ;;
-        0) echo "Exiting..."; exit 0 ;;
-        *) echo "Invalid option."; pause ;;
+        0) echo -e "${GREEN}Exiting...${RESET}"; exit 0 ;;
+        *) echo -e "${RED}Invalid option, please try again.${RESET}"; pause ;;
     esac
-    clear
 done
