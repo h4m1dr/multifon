@@ -203,8 +203,8 @@ cleanup_options() {
     done
 }
 
+# Start main loop
 while true; do
-    clear
     logo
     check_status
     main_menu
