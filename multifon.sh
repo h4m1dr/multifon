@@ -28,7 +28,6 @@ echo ""
 
 # status and location count
 
-
 # Color codes
 RED='\e[91m'
 GREEN='\e[92m'
