@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# رنگ‌ها
+# colors
 RED='\e[91m'
 GREEN='\e[92m'
 YELLOW='\e[93m'
@@ -11,7 +11,7 @@ WHITE='\e[97m'
 BOLD='\e[1m'
 RESET='\e[0m'
 
-# لوگوی مولتی سایفون (الهام گرفته از GamingVPN)
+# Multi Psiphon logo 
 logo() {
 clear
 echo -e "${CYAN}${BOLD}"
@@ -154,6 +154,7 @@ cleanup_options() {
 # Main Loop
 while true; do
     clear
+    logo
     check_status
     main_menu
     read -p "Select an option [0-6]: " opt
