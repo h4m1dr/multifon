@@ -222,9 +222,9 @@ install_psiphon_menu() {
 
 # Main loop
 while true; do
-clear
-logo
-check_status
+    clear
+    logo
+    check_status
     main_menu
     echo ""
     read -p "Select an option [0-6]: " opt
