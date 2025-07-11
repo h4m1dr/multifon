@@ -115,9 +115,9 @@ install_psiphon_menu() {
 
 # Main loop
 clear
-logo
 check_status
 while true; do
+    logo
     main_menu
     echo ""
     read -p "Select an option [0-6]: " opt
