@@ -29,6 +29,17 @@ echo ""
 # status and location count
 
 
+# Color codes
+RED='\e[91m'
+GREEN='\e[92m'
+YELLOW='\e[93m'
+BLUE='\e[94m'
+MAGENTA='\e[95m'
+CYAN='\e[96m'
+WHITE='\e[97m'
+BOLD='\e[1m'
+RESET='\e[0m'
+
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
@@ -110,8 +121,8 @@ cleanup_options() {
 }
 
 install_psiphon_menu() {
-    # [unchanged function body]
-    # ...
+    echo -e "${YELLOW}install_psiphon_menu is not implemented yet.${RESET}"
+    pause
 }
 
 # Main loop
