@@ -28,15 +28,12 @@ echo ""
 
 # status and location count
 
-pause() {
-    echo ""
-    read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
-}
 
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
+
 
 check_status() {
     if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
@@ -90,28 +87,49 @@ install_psiphon() {
         echo -e ""
         echo -e " 4) Uninstall Psiphon (using pluninstaller)"
         echo -e " 5) Remove Psiphon Core Files (manual wipe)"
+        echo -e " 6) Remove Only Extra Installer Files (safe wipe)"
         echo -e "\n 0) Back to Main Menu"
         echo ""
 
-        read -p "Select an option [0-5]: " ps_opt
+        read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
             1)
-                echo -e "${BLUE}Running automatic installer...${RESET}"
-                wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
-                sudo bash plinstaller2 && rm -f plinstaller2
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Skipping installation.${RESET}"
+                else
+                    if [[ -f ./plinstaller2 ]]; then
+                        echo -e "${BLUE}Found existing plinstaller2, using local copy...${RESET}"
+                        sudo bash plinstaller2
+                    else
+                        echo -e "${BLUE}Downloading and running automatic installer...${RESET}"
+                        wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
+                        sudo bash plinstaller2 && rm -f plinstaller2
+                    fi
+                fi
                 pause
                 ;;
             2)
-                echo -e "${BLUE}Running manual installation...${RESET}"
-                git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
-                cd ~/PsiphonLinux/archive && \
-                chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
+                else
+                    echo -e "${BLUE}Running manual installation...${RESET}"
+                    git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
+                    cd ~/PsiphonLinux/archive && \
+                    chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                fi
                 pause
                 ;;
             3)
-                echo -e "${BLUE}Downloading latest Psiphon binary...${RESET}"
-                sudo wget -q -O /usr/bin/psiphon-tunnel-core-x86_64 https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64 && \
-                sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                latest_url="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
+                temp_file="/tmp/psiphon-latest"
+                wget -q -O "$temp_file" "$latest_url"
+                if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
+                    echo -e "${GREEN}Already up to date.${RESET}"
+                else
+                    echo -e "${BLUE}Updating to latest version...${RESET}"
+                    sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
+                    sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                fi
                 pause
                 ;;
             4)
@@ -122,8 +140,12 @@ install_psiphon() {
                 ;;
             5)
                 echo -e "${RED}Removing core files...${RESET}"
-                sudo find /usr/bin /etc $HOME -type f -name "psiphon*" -exec rm -f {} +
-                sudo find /usr/bin /etc $HOME -type f -name "plinstaller2" -exec rm -f {} +
+                sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
+                pause
+                ;;
+            6)
+                echo -e "${YELLOW}Removing only extra installer files...${RESET}"
+                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
                 pause
                 ;;
             0)
@@ -136,6 +158,7 @@ install_psiphon() {
         esac
     done
 }
+
 
 install_firejail() {
     echo -e "${BLUE}Installing Firejail...${RESET}"
