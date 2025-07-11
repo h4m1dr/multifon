@@ -25,6 +25,7 @@ echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${W
 echo ""
 }
 
+
 # status and location count
 check_status() {
     [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]] && psi_status="${GREEN}✓ Installed${RESET}" || psi_status="${RED}✗ Not Found${RESET}"
@@ -41,7 +42,7 @@ check_status() {
     echo ""
 }
 
-# Main menu
+# main menu
 main_menu() {
     echo -e "${MAGENTA}${BOLD}╭───────────────────────────────╮${RESET}"
     echo -e "${MAGENTA}${BOLD}│          ${WHITE}Main Menu${MAGENTA}              │${RESET}"
@@ -56,6 +57,13 @@ main_menu() {
     echo ""
 }
 
+# pause helper
+pause() {
+    echo ""
+    read -n1 -s -r -p $'🔁 Press any key to return to menu...'
+}
+
+# Psiphon installation menu
 install_psiphon() {
     while true; do
         clear
@@ -90,3 +98,70 @@ install_psiphon() {
                 pause
                 ;;
             3)
+                echo -e "${BLUE}Updating Psiphon to latest version...${RESET}"
+                echo "(Placeholder) Running update..."
+                pause
+                ;;
+            4)
+                echo -e "${RED}Uninstalling Psiphon...${RESET}"
+                echo "(Placeholder) Removing binary from /usr/bin..."
+                pause
+                ;;
+            5)
+                echo -e "${YELLOW}Deleting Psiphon files only...${RESET}"
+                echo "(Placeholder) Deleting psiphon-tunnel-core-x86_64..."
+                pause
+                ;;
+            6)
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid option, please try again.${RESET}"
+                pause
+                ;;
+        esac
+    done
+}
+
+# Placeholder functions
+install_firejail() {
+    echo -e "${BLUE}Installing Firejail...${RESET}"
+    pause
+}
+
+create_folder() {
+    if [[ "$1" == "yes" ]]; then
+        echo -e "${GREEN}Creating folder with Firejail...${RESET}"
+    else
+        echo -e "${YELLOW}Creating folder WITHOUT Firejail... (Not recommended)${RESET}"
+    fi
+    pause
+}
+
+show_instances() {
+    echo -e "${CYAN}Listing running Psiphon instances (simulated)...${RESET}"
+    pause
+}
+
+cleanup_options() {
+    echo -e "${RED}Cleanup Options (folders / firejail configs)...${RESET}"
+    pause
+}
+
+# Main loop
+while true; do
+    logo
+    check_status
+    main_menu
+    read -p $'\e[1;33mSelect an option [0-6]: \e[0m' opt
+    case "$opt" in
+        1) install_psiphon ;;
+        2) install_firejail ;;
+        3) create_folder yes ;;
+        4) create_folder no ;;
+        5) show_instances ;;
+        6) cleanup_options ;;
+        0) echo -e "${GREEN}Exiting Multi Psiphon...${RESET}"; exit 0 ;;
+        *) echo -e "${RED}❌ Invalid option. Please try again.${RESET}"; pause ;;
+    esac
+done
