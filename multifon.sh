@@ -26,6 +26,14 @@ echo ""
 }
 
 
+# Multi Psiphon logo
+logo() {
+    clear
+    echo -e "${MAGENTA}${BOLD}  __  __       _     _       _             "
+    echo -e fake logo
+    echo -e "${RESET}"
+}
+لوگو رو دست نزن
 # status and location count
 check_status() {
     [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]] && psi_status="${GREEN}✓ Installed${RESET}" || psi_status="${RED}✗ Not Found${RESET}"
