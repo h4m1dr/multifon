@@ -56,7 +56,58 @@ main_menu() {
     echo ""
 }
 
-# Full show
-logo
-check_status
-main_menu
+# Pause function to return to menu
+pause() {
+    echo ""
+    read -n1 -s -r -p $'🔁 Press any key to return to menu...'
+}
+
+# Placeholder functions
+install_psiphon() {
+    echo -e "${BLUE}Starting Psiphon Installation Menu...${RESET}"
+    pause
+}
+
+install_firejail() {
+    echo -e "${BLUE}Installing Firejail...${RESET}"
+    pause
+}
+
+create_folder() {
+    if [[ "$1" == "yes" ]]; then
+        echo -e "${GREEN}Creating folder with Firejail...${RESET}"
+    else
+        echo -e "${YELLOW}Creating folder WITHOUT Firejail... (Not recommended)${RESET}"
+    fi
+    pause
+}
+
+show_instances() {
+    echo -e "${CYAN}Listing running Psiphon instances (simulated)...${RESET}"
+    pause
+}
+
+cleanup_options() {
+    echo -e "${RED}Cleanup Options (folders / firejail configs)...${RESET}"
+    pause
+}
+
+# Start main loop
+while true; do
+    logo
+    check_status
+    main_menu
+    read -p $'\e[1;33mSelect an option [0-6]: \e[0m' opt
+    case "$opt" in
+        1) install_psiphon ;;
+        2) install_firejail ;;
+        3) create_folder yes ;;
+        4) create_folder no ;;
+        5) show_instances ;;
+        6) cleanup_options ;;
+        0) echo -e "${GREEN}Exiting Multi Psiphon...${RESET}"; exit 0 ;;
+        *) echo -e "${RED}❌ Invalid option. Please try again.${RESET}"; pause ;;
+    esac
+done
+
+
