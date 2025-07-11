@@ -28,7 +28,6 @@ echo ""
 
 # status and location count
 
-
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
@@ -73,6 +72,45 @@ install_firejail() {
     pause
 }
 
+create_folder() {
+    local mode="$1"
+    mkdir -p "$HOME/psiphon"
+    if [[ "$mode" == "yes" ]]; then
+        echo -e "${GREEN}Created Psiphon folder with Firejail in $HOME/psiphon${RESET}"
+    else
+        echo -e "${YELLOW}Created Psiphon folder without Firejail in $HOME/psiphon (Not recommended for multi-location use)${RESET}"
+    fi
+    pause
+}
+
+show_instances() {
+    ps aux | grep -i psiphon | grep -v grep
+    pause
+}
+
+cleanup_options() {
+    echo -e "${MAGENTA}Cleanup Options:${RESET}"
+    echo -e "1) Stop All Psiphon Instances"
+    echo -e "2) Remove All Psiphon Folders"
+    echo -e "3) Remove All Logs"
+    echo -e "4) Remove Firejail-Only Data (isolated folders etc.)"
+    echo -e "5) Full Reset (All Psiphon-related content)"
+    echo -e "0) Back to Main Menu"
+    read -p "Select an option [0-5]: " c_opt
+    case "$c_opt" in
+        1) pkill psiphon; echo -e "${GREEN}Stopped all Psiphon instances.${RESET}"; pause ;;
+        2) rm -rf "$HOME/psiphon"; echo -e "${GREEN}Removed all Psiphon folders.${RESET}"; pause ;;
+        3) rm -rf ~/.psiphon/logs; echo -e "${GREEN}Removed all Psiphon logs.${RESET}"; pause ;;
+        4) rm -rf ~/.firejail; echo -e "${GREEN}Removed Firejail isolated folders.${RESET}"; pause ;;
+        5) pkill psiphon; rm -rf "$HOME/psiphon" ~/.psiphon ~/.firejail /etc/psiphon /usr/bin/psiphon* /usr/bin/firejail; echo -e "${GREEN}Full reset done.${RESET}"; pause ;;
+        0) ;;
+        *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
+    esac
+}
+
+install_psiphon() {
+    install_psiphon_menu
+}
 
 install_psiphon_menu() {
     local installed="No"
@@ -90,7 +128,6 @@ install_psiphon_menu() {
         echo ""
         echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
         echo ""
-
         echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
@@ -100,7 +137,6 @@ install_psiphon_menu() {
         echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-
         echo ""
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
@@ -175,73 +211,10 @@ install_psiphon_menu() {
     done
 }
 
-
-create_folder_with_firejail() {
-    mkdir -p "$HOME/psiphon"
-    echo -e "${GREEN}Created Psiphon folder with Firejail in $HOME/psiphon${RESET}"
-    pause
-}
-
-create_folder_without_firejail() {
-    mkdir -p "$HOME/psiphon"
-    echo -e "${YELLOW}Created Psiphon folder without Firejail in $HOME/psiphon (Not recommended for multi-location use)${RESET}"
-    pause
-}
-
-show_running_psiphon() {
-    ps aux | grep -i psiphon | grep -v grep
-    pause
-}
-
-cleanup_options() {
-    echo -e "${MAGENTA}Cleanup Options:${RESET}"
-    echo -e "1) Stop All Psiphon Instances"
-    echo -e "2) Remove All Psiphon Folders"
-    echo -e "3) Remove All Logs"
-    echo -e "4) Remove Firejail-Only Data (isolated folders etc.)"
-    echo -e "5) Full Reset (All Psiphon-related content)"
-    echo -e "0) Back to Main Menu"
-    read -p "Select an option [0-5]: " c_opt
-    case "$c_opt" in
-        1)
-            pkill psiphon
-            echo -e "${GREEN}Stopped all Psiphon instances.${RESET}"
-            pause
-            ;;
-        2)
-            rm -rf "$HOME/psiphon"
-            echo -e "${GREEN}Removed all Psiphon folders.${RESET}"
-            pause
-            ;;
-        3)
-            rm -rf ~/.psiphon/logs
-            echo -e "${GREEN}Removed all Psiphon logs.${RESET}"
-            pause
-            ;;
-        4)
-            rm -rf ~/.firejail
-            echo -e "${GREEN}Removed Firejail isolated folders.${RESET}"
-            pause
-            ;;
-        5)
-            pkill psiphon
-            rm -rf "$HOME/psiphon" ~/.psiphon ~/.firejail /etc/psiphon /usr/bin/psiphon* /usr/bin/firejail
-            echo -e "${GREEN}Full reset done.${RESET}"
-            pause
-            ;;
-        0)
-            ;;
-        *)
-            echo -e "${RED}Invalid option.${RESET}"
-            pause
-            ;;
-    esac
-}
-
-# Start main loop
+# Main loop
+clear
+check_status
 while true; do
-    logo
-    check_status
     main_menu
     echo ""
     read -p "Select an option [0-6]: " opt
