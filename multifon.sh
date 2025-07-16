@@ -25,25 +25,13 @@ echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${W
 echo ""
 }
 
-
-# status and location count
-
-# Color codes
-RED='\e[91m'
-GREEN='\e[92m'
-YELLOW='\e[93m'
-BLUE='\e[94m'
-MAGENTA='\e[95m'
-CYAN='\e[96m'
-WHITE='\e[97m'
-BOLD='\e[1m'
-RESET='\e[0m'
-
+# Helper: pause for input
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
 
+# Status and Psiphon location count
 check_status() {
     if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
         psi_status="${GREEN}✓ Installed${RESET}"
@@ -66,91 +54,24 @@ check_status() {
     echo ""
 }
 
-main_menu() {
-    echo -e "${BLUE}Main Menu:${RESET}\n"
-    echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
-    echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
-    echo -e "${BLUE} 3) Create Psiphon Folder with Firejail${RESET}"
-    echo -e "${BLUE} 4) Create Psiphon Folder without Firejail ${RED}#Not recommended for multi-location use${RESET}"
-    echo -e "${BLUE} 5) Show Running Psiphon Instances${RESET}"
-    echo -e "${BLUE} 6) Cleanup Options${RESET}"
-    echo -e "\n${BLUE} 0) Exit${RESET}"
-}
-
+# Install firejail
 install_firejail() {
-    echo -e "${BLUE}Installing Firejail...${RESET}"
-    sudo apt update && sudo apt install -y firejail
+    if [[ -x "$(command -v firejail)" ]]; then
+        echo -e "${GREEN}Firejail is already installed. Skipping installation.${RESET}"
+    else
+        echo -e "${BLUE}Installing Firejail...${RESET}"
+        sudo apt update && sudo apt install -y firejail
+    fi
     pause
 }
 
-create_psiphon_location() {
-    echo -e "${CYAN}Creating new Psiphon location...${RESET}"
-
-    read -p "How many locations do you want to create? " count
-    [[ -z "$count" || ! "$count" =~ ^[0-9]+$ ]] && count=1
-
-    used_http=()
-    used_socks=()
-    used_ports=$(ss -tuln | awk 'NR>1{print $5}' | sed -n 's/.*:\([0-9]\+\)/\1/p' | sort -n | uniq)
-    next_http=8081
-    next_socks=1081
-
-    for ((i=1; i<=count; i++)); do
-        echo -e "\n${CYAN}Setting up location $i/${count}${RESET}"
-        read -p "Enter region code (e.g. at for Austria): " region
-        if [[ -z "$region" ]]; then
-            echo -e "${RED}Region code is required.${RESET}"
-            pause
-            return
-        fi
-
-        read -p "Enter a name for this location (default: psiphon-$region): " locname
-        locname=${locname:-psiphon-$region}
-
-        # Find next available http port
-        while echo "$used_ports" | grep -q "^$next_http$"; do ((next_http++)); done
-        http_port=$next_http
-        used_http+=("$http_port")
-        ((next_http++))
-
-        # Find next available socks port
-        while echo "$used_ports" | grep -q "^$next_socks$"; do ((next_socks++)); done
-        socks_port=$next_socks
-        used_socks+=("$socks_port")
-        ((next_socks++))
-
-        loc_path="$HOME/psiphon/$locname"
-        mkdir -p "$loc_path"
-
-        cat > "$loc_path/config.json" <<EOF
-{
-"LocalHttpProxyPort":$http_port,
-"LocalSocksProxyPort":$socks_port,
-"EgressRegion":"${region^^}",
-"PropagationChannelId":"FFFFFFFFFFFFFFFF",
-"RemoteServerListDownloadFilename":"remote_server_list",
-"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
-"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
-"SponsorId":"FFFFFFFFFFFFFFFF",
-"UseIndistinguishableTLS":true
-}
-EOF
-
-        cp /usr/bin/psiphon-tunnel-core-x86_64 "$loc_path/psiphon-tunnel-core-x86_64"
-        chmod +x "$loc_path/psiphon-tunnel-core-x86_64"
-
-        echo -e "${GREEN}New Psiphon instance created in $loc_path${RESET}"
-    done
-    pause
-}
-
-
-
+# Show running Psiphon processes
 show_instances() {
     ps aux | grep -i psiphon | grep -v grep
     pause
 }
 
+# Cleanup options
 cleanup_options() {
     echo -e "${MAGENTA}Cleanup Options:${RESET}"
     echo -e "1) Stop All Psiphon Instances"
@@ -171,105 +92,16 @@ cleanup_options() {
     esac
 }
 
-install_psiphon_menu() {
-    local installed="No"
-    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-        installed="Yes"
-    fi
-
-    while true; do
-        clear
-        echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
-        echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
-        echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
-        echo ""
-        echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
-        echo ""
-        echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
-        echo ""
-
-        echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
-        echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
-        echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
-        echo ""
-        echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
-        echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
-        echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
-        echo ""
-        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-
-        echo ""
-        read -p "Select an option [0-6]: " ps_opt
-        case "$ps_opt" in
-            1)
-                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-                    echo -e "${YELLOW}Psiphon is already installed. Skipping installation.${RESET}"
-                else
-                    if [[ -f ./plinstaller2 ]]; then
-                        echo -e "${BLUE}Found existing plinstaller2, using local copy...${RESET}"
-                        sudo bash plinstaller2
-                    else
-                        echo -e "${BLUE}Downloading and running automatic installer...${RESET}"
-                        wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
-                        sudo bash plinstaller2 && rm -f plinstaller2
-                    fi
-                fi
-                pause
-                ;;
-            2)
-                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-                    echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
-                else
-                    echo -e "${BLUE}Running manual installation...${RESET}"
-                    git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
-                    cd ~/PsiphonLinux/archive && \
-                    chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
-                fi
-                pause
-                ;;
-            3)
-                latest_url="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
-                temp_file="/tmp/psiphon-latest"
-                wget -q -O "$temp_file" "$latest_url"
-                if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
-                    echo -e "${GREEN}Already up to date.${RESET}"
-                    rm -f "$temp_file"
-                else
-                    echo -e "${BLUE}Updating to latest version...${RESET}"
-                    sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
-                    sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
-                fi
-                pause
-                ;;
-            4)
-                if ! [[ -x "/usr/bin/psiphon" ]] && ! [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-                    echo -e "${YELLOW}Psiphon is not installed.${RESET}"
-                else
-                    echo -e "${RED}Uninstalling Psiphon...${RESET}"
-                    wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
-                    sudo bash pluninstaller && rm -f pluninstaller
-                fi
-                pause
-                ;;
-            5)
-                echo -e "${RED}Removing core files...${RESET}"
-                sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
-                pause
-                ;;
-            6)
-                echo -e "${YELLOW}Removing only extra installer files...${RESET}"
-                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
-                pause
-                ;;
-            0)
-                break
-                ;;
-            *)
-                echo -e "${RED}Invalid option, please try again.${RESET}"
-                pause
-                ;;
-        esac
-    done
+# Main menu display
+main_menu() {
+    echo -e "${BLUE}Main Menu:${RESET}\n"
+    echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
+    echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
+    echo -e "${BLUE} 3) Create Psiphon Folder with Firejail${RESET}"
+    echo -e "${BLUE} 4) Create Psiphon Folder without Firejail ${RED}#Not recommended for multi-location use${RESET}"
+    echo -e "${BLUE} 5) Show Running Psiphon Instances${RESET}"
+    echo -e "${BLUE} 6) Cleanup Options${RESET}"
+    echo -e "\n${BLUE} 0) Exit${RESET}"
 }
 
 # Main loop
