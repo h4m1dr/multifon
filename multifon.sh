@@ -283,7 +283,7 @@ while true; do
     case "$opt" in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
-        3) create_folder yes ;;
+        3) create_psiphon_location ;;
         4) create_folder no ;;
         5) show_instances ;;
         6) cleanup_options ;;
