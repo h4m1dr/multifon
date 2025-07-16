@@ -104,6 +104,24 @@ main_menu() {
     echo -e "\n${BLUE} 0) Exit${RESET}"
 }
 
+# ----- External function blocks -----
+
+# Add functions here:
+install_psiphon_menu() {
+    echo -e "${YELLOW}Psiphon installation menu placeholder${RESET}"
+    pause
+}
+
+create_psiphon_location() {
+    echo -e "${YELLOW}Create Psiphon with Firejail placeholder${RESET}"
+    pause
+}
+
+create_folder() {
+    echo -e "${YELLOW}Create Psiphon without Firejail placeholder${RESET}"
+    pause
+}
+
 # Main loop
 while true; do
     clear
