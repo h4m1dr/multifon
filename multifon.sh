@@ -201,3 +201,4 @@ while true; do
         *) echo -e "${RED}Invalid option, please try again.${RESET}"; pause ;;
     esac
 
+done
