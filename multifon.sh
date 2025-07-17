@@ -71,6 +71,7 @@ main_menu() {
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
     echo -e "${BLUE} 5) Cleanup Options${RESET}"
+    echo ""
     echo -e "${BLUE} 0) Exit${RESET}"
 }
 
@@ -206,6 +207,7 @@ psiphon_folder_menu() {
     echo -e "${BLUE} 1) Creating Psiphon folders"
     echo -e "${BLUE} 2) nohup based autostart"
     echo -e "${BLUE} 3) systemd service based autostart"
+    echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
     read -rp "Choose [0-3]: " boot_choice
     generate_start_script "$boot_choice"
