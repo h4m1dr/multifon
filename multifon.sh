@@ -206,12 +206,12 @@ psiphon_folder_menu() {
     echo -e "${BLUE} 2) nohup based autostart"
     echo -e "${BLUE} 3) systemd service based autostart"
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-    read -rp "Choose [1-2]: " boot_choice
+    read -rp "Choose [0-3]: " boot_choice
     generate_start_script "$boot_choice"
 }
 
 # 
-psiphon_folder_menu1() {
+Creating_Psiphon_folders() {
     echo -e "${CYAN}Creating Psiphon folders...${RESET}"
     read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
     for country in $countries; do
