@@ -65,7 +65,7 @@ FIREJAIL_CONFIG_DIR="/etc/firejail"
 
 # Main menu display
 main_menu() {
-    echo -e "${BLUE}Main Menu:${RESET}"
+    echo -e "${YELLOW}Main Menu:${RESET}"
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
     echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
@@ -88,7 +88,8 @@ install_psiphon_menu() {
         clear
         logo
         check_status
-
+        echo -e "${YELLOW}Psiphon Installation Menu:${RESET}"
+        echo ""
         echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 3) Latest Binary Download ${YELLOW}(Approx 20 MB)${RESET}"
@@ -201,6 +202,7 @@ psiphon_folder_menu() {
     logo
     check_status
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
+    echo ""
     echo -e "${BLUE} 1) Creating Psiphon folders"
     echo -e "${BLUE} 2) nohup based autostart"
     echo -e "${BLUE} 3) systemd service based autostart"
@@ -276,7 +278,7 @@ cleanup_menu() {
     clear
     logo
     check_status
-    echo -e "${CYAN}Cleanup Options:${RESET}"
+    echo -e "${YELLOW}Cleanup Options:${RESET}"
     echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
     echo -e "${BLUE} 2) Remove Firejail${RESET}"
     echo ""
