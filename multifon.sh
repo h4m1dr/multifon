@@ -45,16 +45,14 @@ check_status() {
     [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
     loc_count=$(find "$HOME/psiphon/" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l)
 
-    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
-    echo -e "${WHITE}${BOLD} Psiphon Multi-Manager Console ${RESET}"
-    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
-    echo ""
+
+    echo -e "${YELLOW}${BOLD}──────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
     echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon)${RESET}"
     echo -e " - Firejail installed: ${fj_status}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
-    echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
+    echo -e "${YELLOW}${BOLD}──────────────────────────────────────────────────────────────${RESET}"
     echo ""
 }
 
@@ -279,6 +277,7 @@ cleanup_menu() {
     logo
     check_status
     echo -e "${YELLOW}Cleanup Options:${RESET}"
+    echo ""
     echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
     echo -e "${BLUE} 2) Remove Firejail${RESET}"
     echo ""
