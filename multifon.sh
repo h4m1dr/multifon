@@ -74,37 +74,133 @@ main_menu() {
     echo -e "\n${BLUE} 0) Exit${RESET}"
 }
 
-# Psiphon folder management submenu
-psiphon_folder_menu() {
-    echo -e "${CYAN}\nPsiphon Folder Management:${RESET}"
-    echo -e "${BLUE} 1) Create Psiphon Folders for Multiple Locations${RESET}"
-    echo -e "${BLUE} 2) Link Firejail to Psiphon and Set Autostart${RESET}"
-    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-    read -rp "\nSelect an option [0-2]: " sub_option
-    case $sub_option in
-        1) create_psiphon_locations_with_firejail ;;
-        2) link_firejail_autostart_prompt ;;
-        0) return ;;
-        *) echo -e "${RED}Invalid option.${RESET}" ;;
-    esac
-}
 
-# Psiphon installation function
+# 1) Psiphon Installation Menu
 install_psiphon_menu() {
-    echo -e "${GREEN}Installing Psiphon...${RESET}"
-    curl -s -O https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2.sh
-    chmod +x plinstaller2.sh
-    ./plinstaller2.sh
+    local installed="No"
+    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+        installed="Yes"
+    fi
+
+    while true; do
+        clear
+        echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
+        echo -e "${CYAN}│       Psiphon Installation Menu       │${RESET}"
+        echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
+        echo ""
+        echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
+        echo ""
+        echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+        echo ""
+
+        echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
+        echo ""
+        echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
+        echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
+        echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+
+        echo ""
+        read -p "Select an option [0-6]: " ps_opt
+        case "$ps_opt" in
+            1)
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Skipping installation.${RESET}"
+                else
+                    if [[ -f ./plinstaller2 ]]; then
+                        echo -e "${BLUE}Found existing plinstaller2, using local copy...${RESET}"
+                        sudo bash plinstaller2
+                    else
+                        echo -e "${BLUE}Downloading and running automatic installer...${RESET}"
+                        wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
+                        sudo bash plinstaller2 && rm -f plinstaller2
+                    fi
+                fi
+                pause
+                ;;
+            2)
+                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
+                else
+                    echo -e "${BLUE}Running manual installation...${RESET}"
+                    git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
+                    cd ~/PsiphonLinux/archive && \
+                    chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                fi
+                pause
+                ;;
+            3)
+                latest_url="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
+                temp_file="/tmp/psiphon-latest"
+                wget -q -O "$temp_file" "$latest_url"
+                if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
+                    echo -e "${GREEN}Already up to date.${RESET}"
+                    rm -f "$temp_file"
+                else
+                    echo -e "${BLUE}Updating to latest version...${RESET}"
+                    sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
+                    sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                fi
+                pause
+                ;;
+            4)
+                if ! [[ -x "/usr/bin/psiphon" ]] && ! [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+                    echo -e "${YELLOW}Psiphon is not installed.${RESET}"
+                else
+                    echo -e "${RED}Uninstalling Psiphon...${RESET}"
+                    wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
+                    sudo bash pluninstaller && rm -f pluninstaller
+                fi
+                pause
+                ;;
+            5)
+                echo -e "${RED}Removing core files...${RESET}"
+                sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
+                pause
+                ;;
+            6)
+                echo -e "${YELLOW}Removing only extra installer files...${RESET}"
+                sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
+                pause
+                ;;
+            0)
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid option, please try again.${RESET}"
+                pause
+                ;;
+        esac
+    done
 }
 
-# Install Firejail
+
+
+# 2) Install Firejail
 install_firejail() {
-    echo -e "${GREEN}Installing Firejail...${RESET}"
-    sudo apt update && sudo apt install firejail -y
-    echo -e "${GREEN}Firejail installation completed.${RESET}"
+    echo -e "${CYAN}Checking Firejail installation...${RESET}"
+    
+    if command -v firejail &> /dev/null; then
+        echo -e "${GREEN}Firejail is already installed.${RESET}"
+    else
+        echo -e "${YELLOW}Installing Firejail...${RESET}"
+        sudo apt update && sudo apt install -y firejail
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}Firejail installed successfully.${RESET}"
+        else
+            echo -e "${RED}Failed to install Firejail.${RESET}"
+        fi
+    fi
+
+    echo -e "${CYAN}Returning to main menu...${RESET}"
+    sleep 2
 }
 
-# Create Psiphon folders with Firejail
+
+# 3) Psiphon Folder Management
 create_psiphon_locations_with_firejail() {
     echo -e "${CYAN}Creating Psiphon folders...${RESET}"
     read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
