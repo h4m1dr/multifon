@@ -197,6 +197,9 @@ install_firejail() {
 
 # 3) Psiphon Folder Management
 psiphon_folder_menu() {
+    clear
+    logo
+    check_status
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo -e "${BLUE} 1) Creating Psiphon folders"
     echo -e "${BLUE} 2) nohup based autostart"
