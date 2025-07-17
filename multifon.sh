@@ -199,8 +199,17 @@ install_firejail() {
     sleep 2
 }
 
-
 # 3) Psiphon Folder Management
+psiphon_folder_menu() {
+    echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
+    echo -e "${BLUE} 1) Creating Psiphon folders"
+    echo -e "${BLUE} 2) nohup based autostart"
+    echo -e "${BLUE} 3) systemd service based autostart"
+    read -rp "Choose [1-2]: " boot_choice
+    generate_start_script "$boot_choice"
+}
+
+# 
 psiphon_folder_menu1() {
     echo -e "${CYAN}Creating Psiphon folders...${RESET}"
     read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
@@ -210,15 +219,6 @@ psiphon_folder_menu1() {
         chmod +x "$PSIPHON_BASE_DIR/psiphon-$country/psiphon-tunnel-core-x86_64"
         echo -e "${GREEN}Created and prepared folder for $country.${RESET}"
     done
-}
-
-# Ask and create startup method
-psiphon_folder_menu() {
-    echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
-    echo -e "${BLUE} 1) nohup based autostart"
-    echo -e "${BLUE} 2) systemd service based autostart"
-    read -rp "Choose [1-2]: " boot_choice
-    generate_start_script "$boot_choice"
 }
 
 generate_start_script() {
