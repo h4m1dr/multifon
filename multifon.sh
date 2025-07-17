@@ -212,7 +212,6 @@ psiphon_folder_menu() {
  1) Creating_Psiphon_folders ;;
  2) ;;
  3) ;;
-}
 
 
 # Creating Psiphon folders
@@ -262,7 +261,7 @@ EOF
         ((socks_port++))
     done
 }
-
+}
 
 # Show Psiphon instances
 show_running_psiphon() {
