@@ -95,7 +95,7 @@ install_psiphon_menu() {
 
         echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
-        echo -e "${BLUE} 3) Latest Binary Download ${RED}(Approx 20 MB)${RESET}"
+        echo -e "${BLUE} 3) Latest Binary Download ${YELLOW}(Approx 20 MB)${RESET}"
         echo ""
         echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
         echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
