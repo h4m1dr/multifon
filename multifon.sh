@@ -65,13 +65,13 @@ FIREJAIL_CONFIG_DIR="/etc/firejail"
 
 # Main menu display
 main_menu() {
-    echo -e "${BLUE}Main Menu:${RESET}\n"
+    echo -e "${BLUE}Main Menu:${RESET}"
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
     echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
     echo -e "${BLUE} 5) Cleanup Options${RESET}"
-    echo -e "\n${BLUE} 0) Exit${RESET}"
+    echo -e "${BLUE} 0) Exit${RESET}"
 }
 
 
@@ -217,7 +217,7 @@ link_firejail_autostart_prompt() {
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo -e "${BLUE} 1) nohup based autostart"
     echo -e "${BLUE} 2) systemd service based autostart"
-    read -rp "\nChoose [1-2]: " boot_choice
+    read -rp "Choose [1-2]: " boot_choice
     generate_start_script "$boot_choice"
 }
 
@@ -265,17 +265,17 @@ EOL
 show_running_psiphon() {
     echo -e "${YELLOW}Running Psiphon Instances:${RESET}"
     ps aux | grep psiphon | grep -v grep
-    echo -e \n "${YELLOW}🔁 Press any key to return to main menu...${RESET}"
+    echo -e "${YELLOW}🔁 Press any key to return to main menu...${RESET}"
     read -n 1 -s
 }
 
 # Cleanup menu
 cleanup_menu() {
-    echo -e "${CYAN}\nCleanup Options:${RESET}"
+    echo -e "${CYAN}Cleanup Options:${RESET}"
     echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
     echo -e "${BLUE} 2) Remove Firejail${RESET}"
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-    read -rp "\nSelect an option [0-2]: " clean_option
+    read -rp "Select an option [0-2]: " clean_option
     case $clean_option in
         1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}" ;;
         2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}" ;;
