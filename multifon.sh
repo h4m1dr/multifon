@@ -57,6 +57,12 @@ check_status() {
     echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
     echo ""
 }
+
+
+# Directories
+PSIPHON_BASE_DIR="$HOME"
+FIREJAIL_CONFIG_DIR="/etc/firejail"
+
 # Main menu display
 main_menu() {
     echo -e "${BLUE}Main Menu:${RESET}\n"
@@ -181,7 +187,6 @@ cleanup_menu() {
         *) echo -e "${RED}Invalid option.${RESET}" ;;
     esac
 }
-
 
 # Main loop
 while true; do
