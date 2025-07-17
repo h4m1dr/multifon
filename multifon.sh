@@ -82,7 +82,8 @@ install_psiphon_menu() {
     if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
         installed="Yes"
     fi
-
+    
+    clear
     while true; do
         clear
         logo
