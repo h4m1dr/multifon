@@ -201,7 +201,7 @@ install_firejail() {
 
 
 # 3) Psiphon Folder Management
-create_psiphon_locations_with_firejail() {
+psiphon_folder_menu() {
     echo -e "${CYAN}Creating Psiphon folders...${RESET}"
     read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
     for country in $countries; do
