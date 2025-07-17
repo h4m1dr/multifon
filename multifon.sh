@@ -190,15 +190,14 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -p "Select an option [0-5]: " opt
-    case "$opt" in
+    read -rp "\nSelect an option [0-5]: " option
+    case $option in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
-        3) create_psiphon_folder_menu ;;
-        4) Psiphon_status ;;
-        5) cleanup_options ;;
-        0) echo -e "${GREEN}Exiting...${RESET}"; exit 0 ;;
-        *) echo -e "${RED}Invalid option, please try again.${RESET}"; pause ;;
+        3) psiphon_folder_menu ;;
+        4) show_running_psiphon ;;
+        5) cleanup_menu ;;
+        0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
+        *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
     esac
-
 done
