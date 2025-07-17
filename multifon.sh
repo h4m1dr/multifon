@@ -84,16 +84,11 @@ install_psiphon_menu() {
     fi
 
     while true; do
-        clear
-        echo -e "${CYAN}╭───────────────────────────────╮${RESET}"
-        echo -e "${CYAN}│  Psiphon Installation Menu    │${RESET}"
-        echo -e "${CYAN}╰───────────────────────────────╯${RESET}"
-        echo ""
+        
         echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
         echo ""
         echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
         echo ""
-
         echo -e "${BLUE} 1) Automatic Global Installation ${RED}(Recommended)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 2) Manual Installation ${RED}(Outdated Archive)${RESET}${YELLOW} (Approx 20 MB)${RESET}"
         echo -e "${BLUE} 3) Latest Binary Download ${YELLOW}(Approx 20 MB)${RESET}"
@@ -103,7 +98,6 @@ install_psiphon_menu() {
         echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-
         echo ""
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
