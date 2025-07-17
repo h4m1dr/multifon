@@ -37,7 +37,7 @@ pause() {
 # Status and Psiphon location count
 
 check_status() {
-    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+    if [[ -x "/usr/bin/psiphon" ]] ; then
         psi_status="${GREEN}✓ Installed${RESET}"
     else
         psi_status="${RED}✗ Not Found${RESET}"
@@ -50,7 +50,7 @@ check_status() {
     echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
     echo ""
     echo -e " System Check:"
-    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon or /usr/bin/psiphon-tunnel-core-x86_64)${RESET}"
+    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon)${RESET}"
     echo -e " - Firejail installed: ${fj_status}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
@@ -67,7 +67,7 @@ FIREJAIL_CONFIG_DIR="/etc/firejail"
 main_menu() {
     echo -e "${BLUE}Main Menu:${RESET}"
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
-    echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
+    echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
     echo -e "${BLUE} 5) Cleanup Options${RESET}"
@@ -198,6 +198,7 @@ install_firejail() {
     echo -e "${CYAN}Returning to main menu...${RESET}"
     sleep 2
 }
+
 
 # 3) Psiphon Folder Management
 psiphon_folder_menu() {
