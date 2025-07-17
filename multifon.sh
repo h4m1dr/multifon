@@ -206,6 +206,7 @@ psiphon_folder_menu() {
     echo -e "${BLUE} 3) systemd service based autostart"
     echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+    echo ""
     read -rp "Choose [0-3]: " boot_choice
     generate_start_script "$boot_choice"
 }
@@ -272,10 +273,15 @@ show_running_psiphon() {
 
 # Cleanup menu
 cleanup_menu() {
+    clear
+    logo
+    check_status
     echo -e "${CYAN}Cleanup Options:${RESET}"
     echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
     echo -e "${BLUE} 2) Remove Firejail${RESET}"
+    echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+    echo ""
     read -rp "Select an option [0-2]: " clean_option
     case $clean_option in
         1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}" ;;
