@@ -25,13 +25,17 @@ echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${W
 echo ""
 }
 
+
+
 # Helper: pause for input
+
 pause() {
     echo ""
     read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
 }
 
 # Status and Psiphon location count
+
 check_status() {
     if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
         psi_status="${GREEN}✓ Installed${RESET}"
@@ -53,74 +57,131 @@ check_status() {
     echo -e "${YELLOW}${BOLD}───────────────────────────────${RESET}"
     echo ""
 }
-
-# Install firejail
-install_firejail() {
-    if [[ -x "$(command -v firejail)" ]]; then
-        echo -e "${GREEN}Firejail is already installed. Skipping installation.${RESET}"
-    else
-        echo -e "${BLUE}Installing Firejail...${RESET}"
-        sudo apt update && sudo apt install -y firejail
-    fi
-    pause
-}
-
-# Show running Psiphon processes
-show_instances() {
-    ps aux | grep -i psiphon | grep -v grep
-    pause
-}
-
-# Cleanup options
-cleanup_options() {
-    echo -e "${MAGENTA}Cleanup Options:${RESET}"
-    echo -e "1) Stop All Psiphon Instances"
-    echo -e "2) Remove All Psiphon Folders"
-    echo -e "3) Remove All Logs"
-    echo -e "4) Remove Firejail-Only Data (isolated folders etc.)"
-    echo -e "5) Full Reset (All Psiphon-related content)"
-    echo -e "0) Back to Main Menu"
-    read -p "Select an option [0-5]: " c_opt
-    case "$c_opt" in
-        1) pkill psiphon; echo -e "${GREEN}Stopped all Psiphon instances.${RESET}"; pause ;;
-        2) rm -rf "$HOME/psiphon"; echo -e "${GREEN}Removed all Psiphon folders.${RESET}"; pause ;;
-        3) rm -rf ~/.psiphon/logs; echo -e "${GREEN}Removed all Psiphon logs.${RESET}"; pause ;;
-        4) rm -rf ~/.firejail; echo -e "${GREEN}Removed Firejail isolated folders.${RESET}"; pause ;;
-        5) pkill psiphon; rm -rf "$HOME/psiphon" ~/.psiphon ~/.firejail /etc/psiphon /usr/bin/psiphon* /usr/bin/firejail; echo -e "${GREEN}Full reset done.${RESET}"; pause ;;
-        0) ;;
-        *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
-    esac
-}
-
 # Main menu display
 main_menu() {
     echo -e "${BLUE}Main Menu:${RESET}\n"
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
     echo -e "${BLUE} 2) Install Firejail (Approx 5.5 MB)${RESET}"
-    echo -e "${BLUE} 3) Create Psiphon Folder with Firejail${RESET}"
-    echo -e "${BLUE} 4) Create Psiphon Folder without Firejail ${RED}#Not recommended for multi-location use${RESET}"
-    echo -e "${BLUE} 5) Show Running Psiphon Instances${RESET}"
-    echo -e "${BLUE} 6) Cleanup Options${RESET}"
+    echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
+    echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
+    echo -e "${BLUE} 5) Cleanup Options${RESET}"
     echo -e "\n${BLUE} 0) Exit${RESET}"
 }
 
-# ----- External function blocks -----
+# Psiphon folder management submenu
+psiphon_folder_menu() {
+    echo -e "${CYAN}\nPsiphon Folder Management:${RESET}"
+    echo -e "${BLUE} 1) Create Psiphon Folders for Multiple Locations${RESET}"
+    echo -e "${BLUE} 2) Link Firejail to Psiphon and Set Autostart${RESET}"
+    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+    read -rp "\nSelect an option [0-2]: " sub_option
+    case $sub_option in
+        1) create_psiphon_locations_with_firejail ;;
+        2) link_firejail_autostart_prompt ;;
+        0) return ;;
+        *) echo -e "${RED}Invalid option.${RESET}" ;;
+    esac
+}
 
-# Add functions here:
+# Psiphon installation function
 install_psiphon_menu() {
-    echo -e "${YELLOW}Psiphon installation menu placeholder${RESET}"
-    pause
+    echo -e "${GREEN}Installing Psiphon...${RESET}"
+    curl -s -O https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2.sh
+    chmod +x plinstaller2.sh
+    ./plinstaller2.sh
 }
 
-create_psiphon_location() {
-    echo -e "${YELLOW}Create Psiphon with Firejail placeholder${RESET}"
-    pause
+# Install Firejail
+install_firejail() {
+    echo -e "${GREEN}Installing Firejail...${RESET}"
+    sudo apt update && sudo apt install firejail -y
+    echo -e "${GREEN}Firejail installation completed.${RESET}"
 }
 
-create_folder() {
-    echo -e "${YELLOW}Create Psiphon without Firejail placeholder${RESET}"
-    pause
+# Create Psiphon folders with Firejail
+create_psiphon_locations_with_firejail() {
+    echo -e "${CYAN}Creating Psiphon folders...${RESET}"
+    read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
+    for country in $countries; do
+        mkdir -p "$PSIPHON_BASE_DIR/psiphon-$country"
+        cp "$PSIPHON_BASE_DIR/psiphon-tunnel-core" "$PSIPHON_BASE_DIR/psiphon-$country/psiphon-tunnel-core-x86_64"
+        chmod +x "$PSIPHON_BASE_DIR/psiphon-$country/psiphon-tunnel-core-x86_64"
+        echo -e "${GREEN}Created and prepared folder for $country.${RESET}"
+    done
 }
+
+# Ask and create startup method
+link_firejail_autostart_prompt() {
+    echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
+    echo -e "${BLUE} 1) nohup based autostart"
+    echo -e "${BLUE} 2) systemd service based autostart"
+    read -rp "\nChoose [1-2]: " boot_choice
+    generate_start_script "$boot_choice"
+}
+
+generate_start_script() {
+    boot_choice="$1"
+    cat > "$PSIPHON_BASE_DIR/start-psiphons.sh" <<EOF
+#!/bin/bash
+
+for dir in gb fr at ch; do
+    echo "Starting Psiphon: \$dir"
+    cd ~/psiphon-\$dir || continue
+
+    if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
+        mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
+        chmod +x psiphon-tunnel-core-x86_64
+    fi
+
+    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+done
+EOF
+    chmod +x "$PSIPHON_BASE_DIR/start-psiphons.sh"
+
+    if [[ "$boot_choice" == "2" ]]; then
+        sudo tee /etc/systemd/system/psiphon-autostart.service > /dev/null <<EOL
+[Unit]
+Description=Auto start Psiphon via start-psiphons.sh
+After=network.target
+
+[Service]
+ExecStart=$PSIPHON_BASE_DIR/start-psiphons.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOL
+        sudo systemctl daemon-reexec
+        sudo systemctl enable psiphon-autostart
+        echo -e "${GREEN}Systemd autostart enabled.${RESET}"
+    else
+        echo -e "${GREEN}Nohup-based autostart script created. Add it to your .bashrc or crontab if needed.${RESET}"
+    fi
+}
+
+# Show Psiphon instances
+show_running_psiphon() {
+    echo -e "${YELLOW}Running Psiphon Instances:${RESET}"
+    ps aux | grep psiphon | grep -v grep
+    echo -e "\n${YELLOW}🔁 Press any key to return to main menu...${RESET}"
+    read -n 1 -s
+}
+
+# Cleanup menu
+cleanup_menu() {
+    echo -e "${CYAN}\nCleanup Options:${RESET}"
+    echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
+    echo -e "${BLUE} 2) Remove Firejail${RESET}"
+    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+    read -rp "\nSelect an option [0-2]: " clean_option
+    case $clean_option in
+        1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}" ;;
+        2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}" ;;
+        0) return ;;
+        *) echo -e "${RED}Invalid option.${RESET}" ;;
+    esac
+}
+
 
 # Main loop
 while true; do
@@ -129,15 +190,14 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -p "Select an option [0-6]: " opt
+    read -p "Select an option [0-5]: " opt
     case "$opt" in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
-        3) create_psiphon_location ;;
-        4) create_folder no ;;
-        5) show_instances ;;
-        6) cleanup_options ;;
+        3) create_psiphon_folder_menu ;;
+        4) Psiphon_status ;;
+        5) cleanup_options ;;
         0) echo -e "${GREEN}Exiting...${RESET}"; exit 0 ;;
         *) echo -e "${RED}Invalid option, please try again.${RESET}"; pause ;;
     esac
-done
+
