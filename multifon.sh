@@ -209,9 +209,9 @@ psiphon_folder_menu() {
     echo ""
     read -rp "Select an option [0-2]: " psiphon_folder
     case $psiphon_folder in
- 1) Creating_Psiphon_folders ;;
- 2) ;;
- 3) ;;
+	1) Creating_Psiphon_folders ;;
+	2) ;;
+	3) ;;
 
 
 # Creating Psiphon folders
