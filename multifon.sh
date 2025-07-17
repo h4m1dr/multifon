@@ -207,8 +207,11 @@ psiphon_folder_menu() {
     echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
     echo ""
-    read -rp "Choose [0-3]: " boot_choice
-    generate_start_script "$boot_choice"
+    read -rp "Select an option [0-2]: " psiphon_folder
+    case $psiphon_folder in
+ 1) Creating_Psiphon_folders ;;
+ 2) ;;
+ 3) ;;
 }
 
 
@@ -297,8 +300,8 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -rp "Select an option [0-5]: " option
-    case $option in
+    read -rp "Select an option [0-5]: " Main
+    case $Main in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
         3) psiphon_folder_menu ;;
