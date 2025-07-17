@@ -291,7 +291,7 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -rp "\nSelect an option [0-5]: " option
+    read -rp "Select an option [0-5]: " option
     case $option in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
