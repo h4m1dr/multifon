@@ -211,57 +211,55 @@ psiphon_folder_menu() {
     generate_start_script "$boot_choice"
 }
 
-# 
+
+# Creating Psiphon folders
 Creating_Psiphon_folders() {
-    echo -e "${CYAN}Creating Psiphon folders...${RESET}"
-    read -rp "Enter space-separated country codes (e.g., gb fr us): " countries
-    for country in $countries; do
-        mkdir -p "$PSIPHON_BASE_DIR/psiphon-$country"
-        cp "$PSIPHON_BASE_DIR/psiphon-tunnel-core" "$PSIPHON_BASE_DIR/psiphon-$country/psiphon-tunnel-core-x86_64"
-        chmod +x "$PSIPHON_BASE_DIR/psiphon-$country/psiphon-tunnel-core-x86_64"
-        echo -e "${GREEN}Created and prepared folder for $country.${RESET}"
+    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
+
+    echo -e "📍 Enter comma-separated country codes (e.g., at,ie,gb):"
+    read -rp "➤ Country codes: " raw_countries
+    IFS=',' read -ra countries <<< "$raw_countries"
+
+    echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb)."
+    echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
+    read -rp "➤ Folder names: " raw_names
+    IFS=',' read -ra names <<< "$raw_names"
+
+    used_ports=()
+    http_port=8081
+    socks_port=1081
+
+    for i in "${!countries[@]}"; do
+        cc="${countries[i]}"
+        cc_trimmed=$(echo "$cc" | xargs)
+        name="${names[i]}"
+        [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
+
+        dir_path="$PSIPHON_BASE_DIR/$name"
+        mkdir -p "$dir_path"
+        cp "$PSIPHON_BASE_DIR/psiphon-tunnel-core" "$dir_path/psiphon-tunnel-core-x86_64"
+        chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
+
+        # Find available ports
+        while ss -tuln | grep -q ":$http_port "; do ((http_port++)); done
+        while ss -tuln | grep -q ":$socks_port "; do ((socks_port++)); done
+
+        # Create config
+        cat > "$dir_path/config.json" <<EOF
+{
+  "socksProxyPort": $socks_port,
+  "httpProxyPort": $http_port
+}
+EOF
+
+        echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
+
+        used_ports+=("$http_port" "$socks_port")
+        ((http_port++))
+        ((socks_port++))
     done
 }
 
-generate_start_script() {
-    boot_choice="$1"
-    cat > "$PSIPHON_BASE_DIR/start-psiphons.sh" <<EOF
-#!/bin/bash
-
-for dir in gb fr at ch; do
-    echo "Starting Psiphon: \$dir"
-    cd ~/psiphon-\$dir || continue
-
-    if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
-        mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
-        chmod +x psiphon-tunnel-core-x86_64
-    fi
-
-    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-done
-EOF
-    chmod +x "$PSIPHON_BASE_DIR/start-psiphons.sh"
-
-    if [[ "$boot_choice" == "2" ]]; then
-        sudo tee /etc/systemd/system/psiphon-autostart.service > /dev/null <<EOL
-[Unit]
-Description=Auto start Psiphon via start-psiphons.sh
-After=network.target
-
-[Service]
-ExecStart=$PSIPHON_BASE_DIR/start-psiphons.sh
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOL
-        sudo systemctl daemon-reexec
-        sudo systemctl enable psiphon-autostart
-        echo -e "${GREEN}Systemd autostart enabled.${RESET}"
-    else
-        echo -e "${GREEN}Nohup-based autostart script created. Add it to your .bashrc or crontab if needed.${RESET}"
-    fi
-}
 
 # Show Psiphon instances
 show_running_psiphon() {
