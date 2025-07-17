@@ -45,14 +45,13 @@ check_status() {
     [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
     loc_count=$(find "$HOME/psiphon/" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l)
 
-
-    echo -e "${YELLOW}${BOLD}──────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
     echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon)${RESET}"
     echo -e " - Firejail installed: ${fj_status}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
-    echo -e "${YELLOW}${BOLD}──────────────────────────────────────────────────────────────${RESET}"
+    echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo ""
 }
 
