@@ -63,6 +63,7 @@ FIREJAIL_CONFIG_DIR="/etc/firejail"
 # Main menu display
 main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
+    echo ""
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
     echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
