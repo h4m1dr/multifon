@@ -31,7 +31,7 @@ echo ""
 
 pause() {
     echo ""
-    read -n1 -s -r -p \n $'🔁 Press any key to return to main menu...'
+    read -n1 -s -r -p $'🔁 Press any key to return to main menu...'
 }
 
 # Status and Psiphon location count
