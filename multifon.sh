@@ -84,7 +84,9 @@ install_psiphon_menu() {
     fi
 
     while true; do
-        
+        clear
+        logo
+        check_status
         echo -e " • Psiphon:     ${GREEN}✓ Installed${RESET}  /usr/bin/psiphon-tunnel-core-x86_64"
         echo ""
         echo -e " • Source:      ${YELLOW}https://github.com/SpherionOS/PsiphonLinux${RESET}"
