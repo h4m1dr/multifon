@@ -31,7 +31,7 @@ echo ""
 
 pause() {
     echo ""
-    read -n1 -s -r -p $'\n🔁 Press any key to return to main menu...'
+    read -n1 -s -r -p \n $'🔁 Press any key to return to main menu...'
 }
 
 # Status and Psiphon location count
@@ -265,7 +265,7 @@ EOL
 show_running_psiphon() {
     echo -e "${YELLOW}Running Psiphon Instances:${RESET}"
     ps aux | grep psiphon | grep -v grep
-    echo -e "\n${YELLOW}🔁 Press any key to return to main menu...${RESET}"
+    echo -e \n "${YELLOW}🔁 Press any key to return to main menu...${RESET}"
     read -n 1 -s
 }
 
@@ -291,7 +291,7 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -rp \n" Select an option [0-5]: " option
+    read -rp \n " Select an option [0-5]: " option
     case $option in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
