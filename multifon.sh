@@ -73,8 +73,7 @@ main_menu() {
     echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
 echo ""
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
-    echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
-    echo -e "${BLUE} 5) Cleanup Options${RESET}"
+    echo -e "${BLUE} 4) Cleanup Options${RESET}"
     echo ""
     echo -e "${BLUE} 0) Exit${RESET}"
 }
@@ -206,10 +205,13 @@ psiphon_folder_menu() {
     echo ""
     echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
 echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
+echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
+echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
 echo ""
-echo -e "${BLUE} 3) Back to Main Menu${RESET}"
+echo -e "${BLUE} 6) Back to Main Menu${RESET}"
     echo ""
-    read -rp "Select an option [1-3]: " psiphon_folder
+    read -rp "Select an option [1-6]: " psiphon_folder
     case $psiphon_folder in
         1)
             Creating_Psiphon_folders
@@ -218,6 +220,15 @@ echo -e "${BLUE} 3) Back to Main Menu${RESET}"
             Creating_Psiphon_folders_no_firejail
             ;;
         3)
+            check_all_psiphon
+            ;;
+        4)
+            start_all_psiphon
+            ;;
+        5)
+            stop_all_psiphon
+            ;;
+        6)
             return
             ;;
         *)
@@ -246,6 +257,9 @@ IFS=',' read -ra countries <<< "$raw_countries"
    used_ports=()
    http_port=8081
    socks_port=1081
+
+   # Ensure start script exists (skeleton) before adding locations
+   generate_start_psiphon_script
 
    for i in "${!countries[@]}"; do
        cc="${countries[i]}"
@@ -293,6 +307,9 @@ exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psipho
        used_ports+=("$http_port" "$socks_port")
        ((http_port++))
        ((socks_port++))
+
+   # Append this location code to the start-psiphons.sh array (idempotent)
+   :
    done
 
    # After creating folders, generate runner and enable autostart
@@ -306,7 +323,7 @@ generate_start_psiphon_script() {
     mkdir -p "$root"
     local script="$root/start-psiphons.sh"
 
-    # Build script using printf (no heredoc) to avoid EOF issues
+    # Always (re)generate from current folders so the list stays in sync automatically
     printf '%s
 ' \
 '#!/bin/bash' \
@@ -328,13 +345,33 @@ generate_start_psiphon_script() {
 '    cd - >/dev/null 2>&1 || true' \
 '    continue' \
 '  fi' \
-'  nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &' \
+'  if [ -f psiphon.firejail.pid ] && kill -0 $(cat psiphon.firejail.pid) 2>/dev/null; then
+  echo "Already running: $(basename \"$d\")"
+else
+  nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+  echo $! > psiphon.firejail.pid
+fi' \
 '  cd - >/dev/null 2>&1 || true' \
 'done' \
     > "$script"
 
     chmod +x "$script"
     echo -e "${GREEN}Generated:${RESET} $script"
+}
+
+add_location_to_start_script() {
+    local code="$1"
+    local script="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
+    [ -f "$script" ] || return
+    # Normalize to UPPERCASE
+    code=$(echo "$code" | tr '[:lower:]' '[:upper:]')
+    # Skip if already present
+    if grep -qE "^codes\+\=\($code\)$" "$script"; then
+        return
+    fi
+    # Append as an array add to preserve structure
+    printf 'codes+=(%s)
+' "$code" >> "$script"
 }
 
 setup_autostart_service() {
@@ -370,6 +407,54 @@ setup_autostart_service() {
     sudo systemctl enable multifon-psiphon.service
     sudo systemctl restart multifon-psiphon.service
     echo -e "${GREEN}Autostart enabled via systemd:${RESET} multifon-psiphon.service"
+}
+
+# Psiphon bulk helpers (status/start/stop)
+psiphon_dirs() {
+    (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
+     find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u
+}
+
+check_all_psiphon() {
+    echo -e "${YELLOW}Psiphon status (by location):${RESET}"
+    local any=0
+    while IFS= read -r d; do
+        any=1
+        bn=$(basename "$d")
+        if [ -f "$d/psiphon.firejail.pid" ] && kill -0 "$(cat \"$d/psiphon.firejail.pid\")" 2>/dev/null; then
+            echo -e " ${GREEN}RUNNING${RESET}  $bn"
+        else
+            echo -e " ${RED}STOPPED${RESET}  $bn"
+        fi
+    done < <(psiphon_dirs)
+    [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
+    pause
+}
+
+start_all_psiphon() {
+    generate_start_psiphon_script
+    bash "$HOME/psiphon/start-psiphons.sh"
+    pause
+}
+
+stop_all_psiphon() {
+    echo -e "${YELLOW}Stopping all Psiphon locations...${RESET}"
+    local any=0
+    while IFS= read -r d; do
+        any=1
+        if [ -f "$d/psiphon.firejail.pid" ]; then
+            pid=$(cat "$d/psiphon.firejail.pid")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+                sleep 1
+                kill -9 "$pid" 2>/dev/null || true
+                echo -e "${GREEN}Stopped${RESET} $(basename "$d") (pid $pid)"
+            fi
+            rm -f "$d/psiphon.firejail.pid"
+        fi
+    done < <(psiphon_dirs)
+    [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
+    pause
 }
 
 # Creating Psiphon folders (no Firejail) - under repair
@@ -414,13 +499,13 @@ while true; do
     check_status
     main_menu
     echo ""
-    read -rp "Select an option [0-5]: " Main
+    read -rp "Select an option [0-4]: " Main
     case $Main in
         1) install_psiphon_menu ;;
         2) install_firejail ;;
         3) psiphon_folder_menu ;;
-        4) show_running_psiphon ;;
-        5) cleanup_menu ;;
+        4) cleanup_menu ;;
+        # 5) cleanup_menu ;;  # removed; cleanup now at 4
         0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
         *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
     esac
