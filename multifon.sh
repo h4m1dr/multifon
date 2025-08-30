@@ -56,6 +56,28 @@ check_status() {
 PSIPHON_BASE_DIR="$HOME"
 FIREJAIL_CONFIG_DIR="/etc/firejail"
 
+# Persistent port registry (to avoid collisions across runs)
+PORT_REG_FILE="$PSIPHON_BASE_DIR/psiphon/.allocated_ports"
+port_registry_init() {
+    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+    [ -f "$PORT_REG_FILE" ] || : > "$PORT_REG_FILE"
+}
+port_registry_used_ports() {
+    # prints list of ports (one per line) from registry
+    awk '{print $2"
+"$3}' "$PORT_REG_FILE" 2>/dev/null | awk 'NF'
+}
+port_registry_set_entry() {
+    # usage: port_registry_set_entry <name> <http_port> <socks_port>
+    local name="$1" http="$2" socks="$3"
+    local tmp
+    tmp=$(mktemp)
+    grep -v "^${name} " "$PORT_REG_FILE" 2>/dev/null > "$tmp" || true
+    printf '%s %s %s
+' "$name" "$http" "$socks" >> "$tmp"
+    mv "$tmp" "$PORT_REG_FILE"
+}
+
 # Helper: check if a port is in use (ss/netstat fallback)
 port_in_use() {
     if command -v ss >/dev/null 2>&1; then
@@ -280,6 +302,11 @@ IFS=',' read -ra countries <<< "$raw_countries"
    http_port=8081
    socks_port=1081
 
+   # Initialize and import persistent port registry
+   port_registry_init
+   mapfile -t _reserved_ports < <(port_registry_used_ports)
+   if [[ ${#_reserved_ports[@]} -gt 0 ]]; then used_ports+=("${_reserved_ports[@]}"); fi
+
    # Ensure start script exists (skeleton) before adding locations
    generate_start_psiphon_script
 
@@ -335,6 +362,9 @@ socks_port="$socks_port_sel"
 exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psiphon-tunnel-core-x86_64" -config "%s/config.json"
 ' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
+
+       # Save allocation into registry (idempotent per name)
+       port_registry_set_entry "$name" "$http_port" "$socks_port"
 
        echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
