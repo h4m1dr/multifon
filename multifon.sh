@@ -91,23 +91,7 @@ port_in_use() {
 next_free_port_in_range() {
     local start="$1" end="$2" p
     for ((p=start; p<=end; p++)); do
-        if ! port_in_use "$p" && [[ " ${used_ports[*]} " != *" $p "* ]]; then
-            echo "$p"; return 0
-        fi
-    done
-    return 1
-}
-
-# Helper: next free port from a starting point upward (fallback)
-next_free_port_any() {
-    local p="$1"
-    while true; do
-        if ! port_in_use "$p" && [[ " ${used_ports[*]} " != *" $p "* ]]; then
-            echo "$p"; return 0
-        fi
-        ((p++))
-    done
-}
+        if ! port_in_use "$p" && [[ " ${used_ports[*]
 
 # Helper: collect ports from existing configs so we never reuse them
 collect_existing_ports() {
@@ -325,6 +309,9 @@ IFS=',' read -ra countries <<< "$raw_countries"
    port_registry_init
    mapfile -t _reserved_ports < <(port_registry_used_ports)
    if [[ ${#_reserved_ports[@]} -gt 0 ]]; then used_ports+=("${_reserved_ports[@]}"); fi
+
+   # Also collect ports already present in existing config.json files
+   collect_existing_ports
 
    # Ensure start script exists (skeleton) before adding locations
    generate_start_psiphon_script
