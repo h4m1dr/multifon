@@ -39,7 +39,8 @@ check_status() {
         psi_status="${RED}✗ Not Found${RESET}"
     fi
     [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
-    loc_count=$(find "$HOME/psiphon/" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l)
+    loc_count=$( (find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
+              find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | wc -l )
 
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
