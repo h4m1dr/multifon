@@ -205,8 +205,9 @@ psiphon_folder_menu() {
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
-    echo ""
-    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+echo ""
+echo -e "${BLUE} 3) Back to Main Menu${RESET}"
     echo ""
     read -rp "Select an option [1-3]: " psiphon_folder
     case $psiphon_folder in
@@ -229,11 +230,15 @@ psiphon_folder_menu() {
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
-   echo -e "📍 Enter comma-separated country codes (e.g., at,ie,gb):"
-   read -rp "➤ Country codes: " raw_countries
-   IFS=',' read -ra countries <<< "$raw_countries"
+   echo -e "📍 Available Psiphon location codes (use UPPERCASE two-letter codes):"
+echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
+echo -e "   Example: AT,IE,GB"
+echo -e "📍 Enter comma-separated country codes (UPPERCASE):"
+   read -rp "➤ Country codes (UPPERCASE, comma-separated): " raw_countries
+raw_countries=$(echo "$raw_countries" | tr '[:lower:]' '[:upper:]')
+IFS=',' read -ra countries <<< "$raw_countries"
 
-   echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb)."
+   echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb). The prefix 'psiphon-' will be enforced automatically."
    echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
    read -rp "➤ Folder names: " raw_names
    IFS=',' read -ra names <<< "$raw_names"
@@ -244,10 +249,11 @@ Creating_Psiphon_folders() {
 
    for i in "${!countries[@]}"; do
        cc="${countries[i]}"
-       cc_trimmed=$(echo "$cc" | xargs)
+       cc_trimmed=$(echo "$cc" | xargs | tr '[:lower:]' '[:upper:]')
        name="${names[i]}"
-       [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
-       [[ "$name" != psiphon-* ]] && name="psiphon-$name"
+name=$(echo "$name" | xargs | tr ' ' '-')
+[[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
+[[ "$name" != psiphon-* ]] && name="psiphon-$name"
 
        dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
