@@ -210,7 +210,7 @@ psiphon_folder_menu() {
     read -rp "Select an option [0-2]: " psiphon_folder
     case $psiphon_folder in
 	1) Creating_Psiphon_folders ;;
- }
+}
 
   # Creating Psiphon folders
   Creating_Psiphon_folders() {
