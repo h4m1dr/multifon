@@ -109,6 +109,25 @@ next_free_port_any() {
     done
 }
 
+# Helper: collect ports from existing configs so we never reuse them
+collect_existing_ports() {
+    local cfg hp sp
+    while IFS= read -r cfg; do
+        hp=$(grep -oE '"LocalHttpProxyPort"\s*:\s*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        sp=$(grep -oE '"LocalSocksProxyPort"\s*:\s*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        [[ -n "$hp" ]] && used_ports+=("$hp")
+        [[ -n "$sp" ]] && used_ports+=("$sp")
+    done < <( \
+        { find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; \
+          find "$HOME" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; } | \
+        grep -E '/psiphon-[^/]+/config\.json$' | sort -u )
+} " != *" $p "* ]]; then
+            echo "$p"; return 0
+        fi
+        ((p++))
+    done
+}
+
 # Main menu display
 main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
