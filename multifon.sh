@@ -65,6 +65,28 @@ port_in_use() {
     fi
 }
 
+# Helper: next free port within a range (avoids already-picked ports too)
+next_free_port_in_range() {
+    local start="$1" end="$2" p
+    for ((p=start; p<=end; p++)); do
+        if ! port_in_use "$p" && [[ " ${used_ports[*]} " != *" $p "* ]]; then
+            echo "$p"; return 0
+        fi
+    done
+    return 1
+}
+
+# Helper: next free port from a starting point upward (fallback)
+next_free_port_any() {
+    local p="$1"
+    while true; do
+        if ! port_in_use "$p" && [[ " ${used_ports[*]} " != *" $p "* ]]; then
+            echo "$p"; return 0
+        fi
+        ((p++))
+    done
+}
+
 # Main menu display
 main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
@@ -285,16 +307,28 @@ fi
 cp "$core_src" "$dir_path/psiphon-tunnel-core-x86_64"
 chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
 
-# Find available ports using helper
-while port_in_use "$http_port"; do ((http_port++)); done
-while port_in_use "$socks_port"; do ((socks_port++)); done
+# Pick unique, available ports (prefer 8081–8091 and 1081–1091)
+http_port_sel=$(next_free_port_in_range 8081 8091 || true)
+[[ -z "$http_port_sel" ]] && http_port_sel=$(next_free_port_any 8081)
+http_port="$http_port_sel"
+
+socks_port_sel=$(next_free_port_in_range 1081 1091 || true)
+[[ -z "$socks_port_sel" ]] && socks_port_sel=$(next_free_port_any 1081)
+socks_port="$socks_port_sel"
 
        # Create config using printf instead of heredoc to avoid EOF issues
        printf '{
-  "socksProxyPort": %s,
-  "httpProxyPort": %s
+"LocalHttpProxyPort":%s,
+"LocalSocksProxyPort":%s,
+"EgressRegion":"%s",
+"PropagationChannelId":"FFFFFFFFFFFFFFFF",
+"RemoteServerListDownloadFilename":"remote_server_list",
+"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
+"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
+"SponsorId":"FFFFFFFFFFFFFFFF",
+"UseIndistinguishableTLS":true
 }
-' "$socks_port" "$http_port" > "$dir_path/config.json"
+' "$http_port" "$socks_port" "$cc_trimmed" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
        printf '#!/bin/bash
