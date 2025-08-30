@@ -100,8 +100,9 @@ install_psiphon_menu() {
         echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
         echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
         echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
-        echo ""
-        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+echo ""
+echo -e "${BLUE} 3) Back to Main Menu${RESET}"
         echo ""
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
@@ -203,16 +204,19 @@ psiphon_folder_menu() {
     check_status
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo ""
-    echo -e "${BLUE} 1) Creating Psiphon folders"
+    echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
     echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
     echo ""
-    read -rp "Select an option [0-1]: " psiphon_folder
+    read -rp "Select an option [1-3]: " psiphon_folder
     case $psiphon_folder in
         1)
             Creating_Psiphon_folders
             ;;
-        0)
+        2)
+            Creating_Psiphon_folders_no_firejail
+            ;;
+        3)
             return
             ;;
         *)
@@ -243,6 +247,7 @@ Creating_Psiphon_folders() {
        cc_trimmed=$(echo "$cc" | xargs)
        name="${names[i]}"
        [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
+       [[ "$name" != psiphon-* ]] && name="psiphon-$name"
 
        dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
@@ -265,7 +270,17 @@ while port_in_use "$http_port"; do ((http_port++)); done
 while port_in_use "$socks_port"; do ((socks_port++)); done
 
        # Create config using printf instead of heredoc to avoid EOF issues
-       printf '{\n  "socksProxyPort": %s,\n  "httpProxyPort": %s\n}\n' "$socks_port" "$http_port" > "$dir_path/config.json"
+       printf '{
+  "socksProxyPort": %s,
+  "httpProxyPort": %s
+}
+' "$socks_port" "$http_port" > "$dir_path/config.json"
+
+       # Create per-instance start script (Firejail isolation)
+       printf '#!/bin/bash
+exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psiphon-tunnel-core-x86_64" -config "%s/config.json"
+' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+       chmod +x "$dir_path/start.sh"
 
        echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
@@ -273,6 +288,12 @@ while port_in_use "$socks_port"; do ((socks_port++)); done
        ((http_port++))
        ((socks_port++))
    done
+}
+
+# Creating Psiphon folders (no Firejail) - under repair
+Creating_Psiphon_folders_no_firejail() {
+    echo -e "${YELLOW}This option is under repair. Please use option 1 (with Firejail) for now.${RESET}"
+    pause
 }
 
 # Show Psiphon instances
