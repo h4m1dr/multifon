@@ -202,14 +202,24 @@ psiphon_folder_menu() {
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Creating Psiphon folders"
-    echo -e "${BLUE} 2) nohup based autostart"
-    echo -e "${BLUE} 3) systemd service based autostart"
+    # NOTE: Other options are planned but not yet implemented
+    # echo -e "${BLUE} 2) nohup based autostart"
+    # echo -e "${BLUE} 3) systemd service based autostart"
     echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
     echo ""
-    read -rp "Select an option [0-2]: " psiphon_folder
+    read -rp "Select an option [0-1]: " psiphon_folder
     case $psiphon_folder in
-	1) Creating_Psiphon_folders ;;
+        1)
+            Creating_Psiphon_folders
+            ;;
+        0)
+            return
+            ;;
+        *)
+            echo -e "${RED}Invalid option.${RESET}"
+            ;;
+    esac
 }
 
   # Creating Psiphon folders
@@ -307,4 +317,4 @@ while true; do
         0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
         *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
     esac
-done
+ done
