@@ -59,7 +59,7 @@ FIREJAIL_CONFIG_DIR="/etc/firejail"
 # Helper: check if a port is in use (ss/netstat fallback)
 port_in_use() {
     if command -v ss >/dev/null 2>&1; then
-        ss -tuln 2>/dev/null | grep -q ":$1 "
+        ss -tuln 2>/dev/null | grep -q ":    echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}" "
     else
         netstat -tuln 2>/dev/null | grep -q ":$1 "
     fi
