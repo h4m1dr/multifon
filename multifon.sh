@@ -294,6 +294,82 @@ exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psipho
        ((http_port++))
        ((socks_port++))
    done
+
+   # After creating folders, generate runner and enable autostart
+   generate_start_psiphon_script
+   setup_autostart_service
+}
+
+# Generate unified start script based on existing locations and enable autostart
+generate_start_psiphon_script() {
+    local root="$PSIPHON_BASE_DIR/psiphon"
+    mkdir -p "$root"
+    local script="$root/start-psiphons.sh"
+
+    # Build script using printf (no heredoc) to avoid EOF issues
+    printf '%s
+' \
+'#!/bin/bash' \
+'set -e' \
+'' \
+'dirs=()' \
+'while IFS= read -r d; do dirs+=("$d"); done < <( (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u )' \
+'' \
+'for d in "${dirs[@]}"; do' \
+'  [ -d "$d" ] || continue' \
+'  echo "Starting Psiphon: $(basename "$d")"' \
+'  cd "$d" || continue' \
+'  if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then' \
+'    mv psiphon-tunnel-core psiphon-tunnel-core-x86_64' \
+'    chmod +x psiphon-tunnel-core-x86_64' \
+'  fi' \
+'  if ! command -v firejail >/dev/null 2>&1; then' \
+'    echo "firejail not found; skipping $d"' \
+'    cd - >/dev/null 2>&1 || true' \
+'    continue' \
+'  fi' \
+'  nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &' \
+'  cd - >/dev/null 2>&1 || true' \
+'done' \
+    > "$script"
+
+    chmod +x "$script"
+    echo -e "${GREEN}Generated:${RESET} $script"
+}
+
+setup_autostart_service() {
+    local root="$PSIPHON_BASE_DIR/psiphon"
+    local script="$root/start-psiphons.sh"
+    local service="/etc/systemd/system/multifon-psiphon.service"
+    local homedir="$HOME"
+
+    if [ ! -f "$script" ]; then
+        echo -e "${RED}Start script not found, skipping autostart setup.${RESET}"
+        return
+    fi
+
+    # Write systemd service using printf (no heredoc)
+    sudo bash -c "printf '%s
+' \
+'[Unit]' \
+'Description=Start multiple Psiphon instances with Firejail' \
+'After=network-online.target' \
+'Wants=network-online.target' \
+'' \
+'[Service]' \
+'Type=oneshot' \
+'User=${USER}' \
+'WorkingDirectory=${homedir}' \
+'ExecStart=/bin/bash ${script}' \
+'RemainAfterExit=yes' \
+'' \
+'[Install]' \
+'WantedBy=multi-user.target' > '${service}'"
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable multifon-psiphon.service
+    sudo systemctl restart multifon-psiphon.service
+    echo -e "${GREEN}Autostart enabled via systemd:${RESET} multifon-psiphon.service"
 }
 
 # Creating Psiphon folders (no Firejail) - under repair
