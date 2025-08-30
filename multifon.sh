@@ -25,17 +25,13 @@ echo -e "                    ${WHITE}Multi Psiphon Manager${RESET}${CYAN}  | ${W
 echo ""
 }
 
-
-
 # Helper: pause for input
-
 pause() {
     echo ""
     read -n1 -s -r -p $'🔁 Press any key to return to main menu...'
 }
 
 # Status and Psiphon location count
-
 check_status() {
     if [[ -x "/usr/bin/psiphon" ]] ; then
         psi_status="${GREEN}✓ Installed${RESET}"
@@ -55,7 +51,6 @@ check_status() {
     echo ""
 }
 
-
 # Directories
 PSIPHON_BASE_DIR="$HOME"
 FIREJAIL_CONFIG_DIR="/etc/firejail"
@@ -72,7 +67,6 @@ main_menu() {
     echo ""
     echo -e "${BLUE} 0) Exit${RESET}"
 }
-
 
 # 1) Psiphon Installation Menu
 install_psiphon_menu() {
@@ -171,8 +165,6 @@ install_psiphon_menu() {
     done
 }
 
-
-
 # 2) Install Firejail
 install_firejail() {
     echo -e "${CYAN}Checking Firejail installation...${RESET}"
@@ -193,7 +185,6 @@ install_firejail() {
     sleep 2
 }
 
-
 # 3) Psiphon Folder Management
 psiphon_folder_menu() {
     clear
@@ -202,9 +193,6 @@ psiphon_folder_menu() {
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Creating Psiphon folders"
-    # NOTE: Other options are planned but not yet implemented
-    # echo -e "${BLUE} 2) nohup based autostart"
-    # echo -e "${BLUE} 3) systemd service based autostart"
     echo ""
     echo -e "${BLUE} 0) Back to Main Menu${RESET}"
     echo ""
@@ -222,54 +210,48 @@ psiphon_folder_menu() {
     esac
 }
 
-  # Creating Psiphon folders
-  Creating_Psiphon_folders() {
-     echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
+# Creating Psiphon folders
+Creating_Psiphon_folders() {
+   echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
-     echo -e "📍 Enter comma-separated country codes (e.g., at,ie,gb):"
-     read -rp "➤ Country codes: " raw_countries
-     IFS=',' read -ra countries <<< "$raw_countries"
+   echo -e "📍 Enter comma-separated country codes (e.g., at,ie,gb):"
+   read -rp "➤ Country codes: " raw_countries
+   IFS=',' read -ra countries <<< "$raw_countries"
 
-     echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb)."
-     echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
-     read -rp "➤ Folder names: " raw_names
-     IFS=',' read -ra names <<< "$raw_names"
+   echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb)."
+   echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
+   read -rp "➤ Folder names: " raw_names
+   IFS=',' read -ra names <<< "$raw_names"
 
-     used_ports=()
-     http_port=8081
-     socks_port=1081
+   used_ports=()
+   http_port=8081
+   socks_port=1081
 
-     for i in "${!countries[@]}"; do
-         cc="${countries[i]}"
-         cc_trimmed=$(echo "$cc" | xargs)
-         name="${names[i]}"
-         [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
+   for i in "${!countries[@]}"; do
+       cc="${countries[i]}"
+       cc_trimmed=$(echo "$cc" | xargs)
+       name="${names[i]}"
+       [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
 
-         dir_path="$PSIPHON_BASE_DIR/$name"
-         mkdir -p "$dir_path"
-         cp "$PSIPHON_BASE_DIR/psiphon-tunnel-core" "$dir_path/psiphon-tunnel-core-x86_64"
-         chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
+       dir_path="$PSIPHON_BASE_DIR/$name"
+       mkdir -p "$dir_path"
+       cp "$PSIPHON_BASE_DIR/psiphon-tunnel-core" "$dir_path/psiphon-tunnel-core-x86_64"
+       chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
 
-         # Find available ports
-         while ss -tuln | grep -q ":$http_port "; do ((http_port++)); done
-         while ss -tuln | grep -q ":$socks_port "; do ((socks_port++)); done
+       # Find available ports
+       while ss -tuln | grep -q ":$http_port "; do ((http_port++)); done
+       while ss -tuln | grep -q ":$socks_port "; do ((socks_port++)); done
 
-         # Create config
-         cat > "$dir_path/config.json" <<EOF
- {
-   "socksProxyPort": $socks_port,
-   "httpProxyPort": $http_port
- }
- EOF
+       # Create config using printf instead of heredoc to avoid EOF issues
+       printf '{\n  "socksProxyPort": %s,\n  "httpProxyPort": %s\n}\n' "$socks_port" "$http_port" > "$dir_path/config.json"
 
-         echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
+       echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
-         used_ports+=("$http_port" "$socks_port")
-         ((http_port++))
-         ((socks_port++))
-     done
- }
-
+       used_ports+=("$http_port" "$socks_port")
+       ((http_port++))
+       ((socks_port++))
+   done
+}
 
 # Show Psiphon instances
 show_running_psiphon() {
@@ -317,5 +299,4 @@ while true; do
         0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
         *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
     esac
- done
-#xx
+done
