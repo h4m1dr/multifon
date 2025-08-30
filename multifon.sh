@@ -70,7 +70,8 @@ main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
-    echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
+    $1
+echo ""
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Show Running Psiphon Instances${RESET}"
     echo -e "${BLUE} 5) Cleanup Options${RESET}"
@@ -243,7 +244,7 @@ Creating_Psiphon_folders() {
        name="${names[i]}"
        [[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
 
-       dir_path="$PSIPHON_BASE_DIR/$name"
+       dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
        # Locate psiphon core binary from common paths
 core_src=""
