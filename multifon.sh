@@ -524,7 +524,7 @@ generate_start_psiphon_script() {
 '    fi' \
 '  fi' \
 '  if [ ! -f psiphon.firejail.pid ]; then' \
-'    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &' \
+'    nohup bash ./start.sh > log.txt 2>&1 &' \
 '    echo $! > psiphon.firejail.pid' \
 '  fi' \
 '  cd - >/dev/null 2>&1 || true' \
@@ -616,6 +616,17 @@ check_all_psiphon() {
             if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= | grep -q "psiphon-tunnel-core"; then
                 running=1
             fi
+        fi
+        # fallback: check listening ports
+        if [ "$running" -ne 1 ]; then
+            detect=0
+            if [[ "$hp" =~ ^[0-9]+$ ]]; then
+                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; fi
+            fi
+            if [[ "$sp" =~ ^[0-9]+$ ]] && [ "$detect" -ne 1 ]; then
+                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; fi
+            fi
+            [ "$detect" -eq 1 ] && running=1
         fi
         if [ "$running" -eq 1 ]; then
             echo -e " ${GREEN}RUNNING${RESET}  $bn  ${WHITE}(HTTP:$hp SOCKS:$sp)${RESET}"
