@@ -28,7 +28,7 @@ echo ""
 # Helper: pause for input
 pause() {
     echo ""
-    read -n1 -s -r -p $'🔁 Press any key to return to main menu...'
+    read -n1 -s -r -p $'🔁 Press any key to continue...'
 }
 
 # Status and Psiphon location count
@@ -49,6 +49,7 @@ check_status() {
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
+    info_write_system
     echo ""
 }
 
@@ -156,9 +157,9 @@ install_psiphon_menu() {
         echo -e "${BLUE} 4) Uninstall Psiphon ${RESET}(using pluninstaller)"
         echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
         echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
-        echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+        
 echo ""
-echo -e "${BLUE} 3) Back to Main Menu${RESET}"
+echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
@@ -249,6 +250,7 @@ install_firejail() {
         fi
     fi
 
+    info_write_system
     echo -e "${CYAN}Returning to main menu...${RESET}"
     sleep 2
 }
@@ -261,14 +263,14 @@ psiphon_folder_menu() {
     echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
-echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
-echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
-echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
-echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
-echo ""
-echo -e "${BLUE} 6) Back to Main Menu${RESET}"
+    echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+    echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
+    echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
+    echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
     echo ""
-    read -rp "Select an option [1-6]: " psiphon_folder
+    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+    echo ""
+    read -rp "Select an option [0-5]: " psiphon_folder
     case $psiphon_folder in
         1)
             Creating_Psiphon_folders
@@ -285,13 +287,15 @@ echo -e "${BLUE} 6) Back to Main Menu${RESET}"
         5)
             stop_all_psiphon
             ;;
-        6)
+        0)
             return
             ;;
         *)
             echo -e "${RED}Invalid option.${RESET}"
             ;;
     esac
+    psiphon_folder_menu
+    return
 }
 
 # Info file to track locations/ports and paths
@@ -321,6 +325,36 @@ info_write() {
         echo "$files"
         echo "Date: $(date -Is)"
         echo "=== END $name ==="
+        echo
+    } >> "$INFO_FILE"
+}
+
+# System INFO overview writer
+info_write_system() {
+    mkdir -p "$PSIPHON_BASE_DIR/psiphon"; [ -f "$INFO_FILE" ] || : > "$INFO_FILE"
+    local psi="no" psi_path=""
+    if [[ -x "/usr/bin/psiphon" ]]; then psi="yes"; psi_path="/usr/bin/psiphon";
+    elif [[ -x "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then psi="yes"; psi_path="/usr/bin/psiphon-tunnel-core-x86_64"; fi
+    local fj="no"; command -v firejail >/dev/null 2>&1 && fj="yes"
+    local loc_count=$( (find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
+              find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | wc -l )
+    local start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
+    local autostart="unknown"
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-enabled multifon-psiphon.service >/dev/null 2>&1; then autostart="enabled";
+        elif systemctl is-active multifon-psiphon.service >/dev/null 2>&1; then autostart="active"; else autostart="disabled"; fi
+    fi
+    sed -i "/^=== SYSTEM ===$/,/^=== END SYSTEM ===$/d" "$INFO_FILE" 2>/dev/null || true
+    {
+        echo "=== SYSTEM ==="
+        echo "PsiphonInstalled: $psi"
+        echo "PsiphonBinary: $psi_path"
+        echo "FirejailInstalled: $fj"
+        echo "LocationsCount: $loc_count"
+        echo "StartAllScript: $start_all"
+        echo "AutostartService: multifon-psiphon.service ($autostart)"
+        echo "Date: $(date -Is)"
+        echo "=== END SYSTEM ==="
         echo
     } >> "$INFO_FILE"
 }
@@ -599,11 +633,13 @@ cleanup_menu() {
     echo ""
     read -rp "Select an option [0-2]: " clean_option
     case $clean_option in
-        1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}" ;;
-        2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}" ;;
+        1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
+        2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
         0) return ;;
-        *) echo -e "${RED}Invalid option.${RESET}" ;;
+        *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
     esac
+    cleanup_menu
+    return
 }
 
 # Main loop
