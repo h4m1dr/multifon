@@ -70,12 +70,15 @@ port_registry_used_ports() {
 port_registry_set_entry() {
     # usage: port_registry_set_entry <name> <http_port> <socks_port>
     local name="$1" http="$2" socks="$3"
-    local tmp
-    tmp=$(mktemp)
-    grep -v "^${name} " "$PORT_REG_FILE" 2>/dev/null > "$tmp" || true
-    printf '%s %s %s
+    (
+        # lock registry file during update
+        flock -w 3 9 || { echo "${YELLOW}Port registry busy, skipping write for $name${RESET}"; exit 0; }
+        tmp=$(mktemp)
+        grep -v "^${name} " "$PORT_REG_FILE" 2>/dev/null > "$tmp" || true
+        printf '%s %s %s
 ' "$name" "$http" "$socks" >> "$tmp"
-    mv "$tmp" "$PORT_REG_FILE"
+        mv "$tmp" "$PORT_REG_FILE"
+    ) 9>>"$PORT_REG_FILE"
 }
 
 # Helper: check if a port is in use (ss/netstat fallback)
@@ -113,12 +116,16 @@ next_free_port_any() {
 collect_existing_ports() {
     local cfg hp sp
     while IFS= read -r cfg; do
-        hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
-        sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        if command -v jq >/dev/null 2>&1; then
+            hp=$(jq -r '.LocalHttpProxyPort // empty' "$cfg")
+            sp=$(jq -r '.LocalSocksProxyPort // empty' "$cfg")
+        else
+            hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+            sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        fi
         [[ -n "$hp" ]] && used_ports+=("$hp")
         [[ -n "$sp" ]] && used_ports+=("$sp")
-    done < <( { find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; \
-                } \
+    done < <( find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null \
               | grep -E '/psiphon-[^/]+/config\.json$' | sort -u )
 }
 
@@ -267,10 +274,11 @@ psiphon_folder_menu() {
         echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
         echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
         echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
+        echo -e "${BLUE} 6) Restart all Psiphon locations${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-5]: " psiphon_folder
+        read -rp "Select an option [0-6]: " psiphon_folder
         case $psiphon_folder in
             1)
                 Creating_Psiphon_folders
@@ -286,6 +294,9 @@ psiphon_folder_menu() {
                 ;;
             5)
                 stop_all_psiphon
+                ;;
+            6)
+                restart_all_psiphon
                 ;;
             0)
                 return
@@ -309,24 +320,27 @@ info_write() {
     local start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
     local files
     files=$(ls -1 "$dir" 2>/dev/null | sed 's/^/  - /')
-    # Remove existing block for this name
-    sed -i "/^=== $name ===$/,/^=== END $name ===$/d" "$INFO_FILE" 2>/dev/null || true
-    {
-        echo "=== $name ==="
-        echo "Folder: $dir"
-        echo "Egress: $cc"
-        echo "HTTP: $http"
-        echo "SOCKS: $socks"
-        echo "Binary: $bin"
-        echo "StartScript: $start"
-        echo "StartAllScript: $start_all"
-        echo "Firejail: yes"
-        echo "Files:"
-        echo "$files"
-        echo "Date: $(date -Is)"
-        echo "=== END $name ==="
-        echo
-    } >> "$INFO_FILE"
+    (
+        flock -w 3 9 || exit 0
+        # Remove existing block for this name
+        sed -i "/^=== $name ===$/,/^=== END $name ===$/d" "$INFO_FILE" 2>/dev/null || true
+        {
+            echo "=== $name ==="
+            echo "Folder: $dir"
+            echo "Egress: $cc"
+            echo "HTTP: $http"
+            echo "SOCKS: $socks"
+            echo "Binary: $bin"
+            echo "StartScript: $start"
+            echo "StartAllScript: $start_all"
+            echo "Firejail: yes"
+            echo "Files:"
+            echo "$files"
+            echo "Date: $(date -Is)"
+            echo "=== END $name ==="
+            echo
+        } >> "$INFO_FILE"
+    ) 9>>"$INFO_FILE"
 }
 
 # System INFO overview writer
@@ -343,19 +357,22 @@ info_write_system() {
         if systemctl is-enabled multifon-psiphon.service >/dev/null 2>&1; then autostart="enabled";
         elif systemctl is-active multifon-psiphon.service >/dev/null 2>&1; then autostart="active"; else autostart="disabled"; fi
     fi
-    sed -i "/^=== SYSTEM ===$/,/^=== END SYSTEM ===$/d" "$INFO_FILE" 2>/dev/null || true
-    {
-        echo "=== SYSTEM ==="
-        echo "PsiphonInstalled: $psi"
-        echo "PsiphonBinary: $psi_path"
-        echo "FirejailInstalled: $fj"
-        echo "LocationsCount: $loc_count"
-        echo "StartAllScript: $start_all"
-        echo "AutostartService: multifon-psiphon.service ($autostart)"
-        echo "Date: $(date -Is)"
-        echo "=== END SYSTEM ==="
-        echo
-    } >> "$INFO_FILE"
+    (
+        flock -w 3 9 || exit 0
+        sed -i "/^=== SYSTEM ===$/,/^=== END SYSTEM ===$/d" "$INFO_FILE" 2>/dev/null || true
+        {
+            echo "=== SYSTEM ==="
+            echo "PsiphonInstalled: $psi"
+            echo "PsiphonBinary: $psi_path"
+            echo "FirejailInstalled: $fj"
+            echo "LocationsCount: $loc_count"
+            echo "StartAllScript: $start_all"
+            echo "AutostartService: multifon-psiphon.service ($autostart)"
+            echo "Date: $(date -Is)"
+            echo "=== END SYSTEM ==="
+            echo
+        } >> "$INFO_FILE"
+    ) 9>>"$INFO_FILE"
 }
 
 # Creating Psiphon folders
@@ -393,10 +410,11 @@ IFS=',' read -ra countries <<< "$raw_countries"
    for i in "${!countries[@]}"; do
        cc="${countries[i]}"
        cc_trimmed=$(echo "$cc" | xargs | tr '[:lower:]' '[:upper:]')
+       cc_lower=$(echo "$cc_trimmed" | tr '[:upper:]' '[:lower:]')
        name="${names[i]}"
-name=$(echo "$name" | xargs | tr ' ' '-')
-[[ -z "$name" ]] && name="psiphon-${cc_trimmed}"
-[[ "$name" != psiphon-* ]] && name="psiphon-$name"
+       name=$(echo "$name" | xargs | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')
+       [[ -z "$name" ]] && name="psiphon-${cc_lower}"
+       [[ "$name" != psiphon-* ]] && name="psiphon-$name"
 
        dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
@@ -422,6 +440,12 @@ http_port="$http_port_sel"
 socks_port_sel=$(next_free_port_in_range 1081 1091 || true)
 [[ -z "$socks_port_sel" ]] && socks_port_sel=$(next_free_port_any 1081)
 socks_port="$socks_port_sel"
+
+       # Validate selected ports (fail-fast if empty)
+       if ! [[ "$http_port" =~ ^[0-9]+$ ]] || ! [[ "$socks_port" =~ ^[0-9]+$ ]]; then
+           echo -e "${RED}✗ Failed to allocate ports for $name. Skipping.${RESET}"
+           continue
+       fi
 
        # Create config using printf instead of heredoc to avoid EOF issues
        printf '{
@@ -470,14 +494,13 @@ generate_start_psiphon_script() {
     mkdir -p "$root"
     local script="$root/start-psiphons.sh"
 
-    # Always (re)generate from current folders so the list stays in sync automatically
     printf '%s
 ' \
 '#!/bin/bash' \
 'set -e' \
 '' \
 'dirs=()' \
-'while IFS= read -r d; do dirs+=("$d"); done < <( (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u )' \
+'while IFS= read -r d; do dirs+=("$d"); done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )' \
 '' \
 'for d in "${dirs[@]}"; do' \
 '  [ -d "$d" ] || continue' \
@@ -492,12 +515,18 @@ generate_start_psiphon_script() {
 '    cd - >/dev/null 2>&1 || true' \
 '    continue' \
 '  fi' \
-'  if [ -f psiphon.firejail.pid ] && kill -0 $(cat psiphon.firejail.pid) 2>/dev/null; then
-  echo "Already running: $(basename \"$d\")"
-else
-  nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-  echo $! > psiphon.firejail.pid
-fi' \
+'  if [ -f psiphon.firejail.pid ]; then' \
+'    pid=$(cat psiphon.firejail.pid)' \
+'    if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= | grep -q "psiphon-tunnel-core"; then' \
+'      echo "Already running: $(basename "$d")"' \
+'    else' \
+'      rm -f psiphon.firejail.pid' \
+'    fi' \
+'  fi' \
+'  if [ ! -f psiphon.firejail.pid ]; then' \
+'    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &' \
+'    echo $! > psiphon.firejail.pid' \
+'  fi' \
 '  cd - >/dev/null 2>&1 || true' \
 'done' \
     > "$script"
@@ -567,10 +596,31 @@ check_all_psiphon() {
     while IFS= read -r d; do
         any=1
         bn=$(basename "$d")
-        if [ -f "$d/psiphon.firejail.pid" ] && kill -0 "$(cat \"$d/psiphon.firejail.pid\")" 2>/dev/null; then
-            echo -e " ${GREEN}RUNNING${RESET}  $bn"
+        cfg="$d/config.json"
+        # read ports from config
+        hp="-"; sp="-"
+        if [ -f "$cfg" ]; then
+            if command -v jq >/dev/null 2>&1; then
+                hp=$(jq -r '.LocalHttpProxyPort // "-"' "$cfg")
+                sp=$(jq -r '.LocalSocksProxyPort // "-"' "$cfg")
+            else
+                hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+                sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+                hp="${hp:--}"; sp="${sp:--}"
+            fi
+        fi
+        # verify pid + process args
+        running=0
+        if [ -f "$d/psiphon.firejail.pid" ]; then
+            pid=$(cat "$d/psiphon.firejail.pid")
+            if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= | grep -q "psiphon-tunnel-core"; then
+                running=1
+            fi
+        fi
+        if [ "$running" -eq 1 ]; then
+            echo -e " ${GREEN}RUNNING${RESET}  $bn  ${WHITE}(HTTP:$hp SOCKS:$sp)${RESET}"
         else
-            echo -e " ${RED}STOPPED${RESET}  $bn"
+            echo -e " ${RED}STOPPED${RESET}  $bn  ${WHITE}(HTTP:$hp SOCKS:$sp)${RESET}"
         fi
     done < <(psiphon_dirs)
     [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
@@ -580,6 +630,33 @@ check_all_psiphon() {
 start_all_psiphon() {
     generate_start_psiphon_script
     bash "$HOME/psiphon/start-psiphons.sh"
+    pause
+}
+
+start_all_psiphon_quiet() {
+    generate_start_psiphon_script
+    bash "$HOME/psiphon/start-psiphons.sh" >/dev/null 2>&1 || true
+}
+
+stop_all_psiphon_quiet() {
+    while IFS= read -r d; do
+        if [ -f "$d/psiphon.firejail.pid" ]; then
+            pid=$(cat "$d/psiphon.firejail.pid")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+                sleep 1
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            rm -f "$d/psiphon.firejail.pid"
+        fi
+    done < <(psiphon_dirs)
+}
+
+restart_all_psiphon() {
+    echo -e "${YELLOW}Restarting all Psiphon locations...${RESET}"
+    stop_all_psiphon_quiet
+    start_all_psiphon_quiet
+    echo -e "${GREEN}Restart complete.${RESET}"
     pause
 }
 
