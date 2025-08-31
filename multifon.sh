@@ -91,29 +91,36 @@ port_in_use() {
 next_free_port_in_range() {
     local start="$1" end="$2" p
     for ((p=start; p<=end; p++)); do
-        if ! port_in_use "$p" && [[ " ${used_ports[*]
+        if ! port_in_use "$p" && ! [[ " ${used_ports[*]} " == *" $p "* ]]; then
+            echo "$p"; return 0
+        fi
+    done
+    return 1
+}
 
-# Helper: collect ports from existing configs so we never reuse them
-collect_existing_ports() {
-    local cfg hp sp
-    while IFS= read -r cfg; do
-        hp=$(grep -oE '"LocalHttpProxyPort"\s*:\s*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
-        sp=$(grep -oE '"LocalSocksProxyPort"\s*:\s*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
-        [[ -n "$hp" ]] && used_ports+=("$hp")
-        [[ -n "$sp" ]] && used_ports+=("$sp")
-    done < <( \
-        { find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; \
-          find "$HOME" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; } | \
-        grep -E '/psiphon-[^/]+/config\.json$' | sort -u )
-} " != *" $p "* ]]; then
+# Helper: next free port from a starting point upward (fallback)
+next_free_port_any() {
+    local p="$1"
+    while true; do
+        if ! port_in_use "$p" && ! [[ " ${used_ports[*]} " == *" $p "* ]]; then
             echo "$p"; return 0
         fi
         ((p++))
     done
 }
 
-# Helper: collect ports from existing configs so we never reuse them (stub)
-collect_existing_ports() { :; }
+# Helper: collect ports from existing configs so we never reuse them
+collect_existing_ports() {
+    local cfg hp sp
+    while IFS= read -r cfg; do
+        hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+        [[ -n "$hp" ]] && used_ports+=("$hp")
+        [[ -n "$sp" ]] && used_ports+=("$sp")
+    done < <( { find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; \
+                find "$HOME" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; } \
+              | grep -E '/psiphon-[^/]+/config\.json$' | sort -u )
+}
 
 # Main menu display
 main_menu() {
@@ -287,6 +294,37 @@ echo -e "${BLUE} 6) Back to Main Menu${RESET}"
     esac
 }
 
+# Info file to track locations/ports and paths
+INFO_FILE="$PSIPHON_BASE_DIR/psiphon/INFO.txt"
+info_write() {
+    local name="$1" cc="$2" dir="$3" http="$4" socks="$5"
+    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+    [ -f "$INFO_FILE" ] || : > "$INFO_FILE"
+    local bin="$dir/psiphon-tunnel-core-x86_64"
+    local start="$dir/start.sh"
+    local start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
+    local files
+    files=$(ls -1 "$dir" 2>/dev/null | sed 's/^/  - /')
+    # Remove existing block for this name
+    sed -i "/^=== $name ===$/,/^=== END $name ===$/d" "$INFO_FILE" 2>/dev/null || true
+    {
+        echo "=== $name ==="
+        echo "Folder: $dir"
+        echo "Egress: $cc"
+        echo "HTTP: $http"
+        echo "SOCKS: $socks"
+        echo "Binary: $bin"
+        echo "StartScript: $start"
+        echo "StartAllScript: $start_all"
+        echo "Firejail: yes"
+        echo "Files:"
+        echo "$files"
+        echo "Date: $(date -Is)"
+        echo "=== END $name ==="
+        echo
+    } >> "$INFO_FILE"
+}
+
 # Creating Psiphon folders
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
@@ -374,6 +412,9 @@ exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psipho
 
        # Save allocation into registry (idempotent per name)
        port_registry_set_entry "$name" "$http_port" "$socks_port"
+
+       # Write/update info registry
+       info_write "$name" "$cc_trimmed" "$dir_path" "$http_port" "$socks_port"
 
        echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
