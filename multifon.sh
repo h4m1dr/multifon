@@ -422,11 +422,13 @@ IFS=',' read -ra countries <<< "$raw_countries"
 core_src=""
 for p in "$PSIPHON_BASE_DIR/psiphon-tunnel-core" \
          "/usr/bin/psiphon-tunnel-core-x86_64" \
+         "/etc/psiphon/psiphon-tunnel-core-x86_64" \
+         "/etc/psiphon/psiphon-tunnel-core" \
          "/usr/bin/psiphon"; do
     [[ -x "$p" ]] && core_src="$p" && break
 done
 if [[ -z "$core_src" ]]; then
-    echo -e "${RED}✗ Psiphon core not found (looked in: $PSIPHON_BASE_DIR, /usr/bin). Skipping $name.${RESET}"
+    echo -e "${RED}✗ Psiphon core not found (looked in: $PSIPHON_BASE_DIR, /usr/bin, /etc/psiphon). Skipping $name.${RESET}"
     continue
 fi
 cp "$core_src" "$dir_path/psiphon-tunnel-core-x86_64"
@@ -463,8 +465,9 @@ socks_port="$socks_port_sel"
 
        # Create per-instance start script (Firejail isolation)
        printf '#!/bin/bash
-exec firejail --quiet --private="%s" --whitelist="%s" --env=HOME="%s" "%s/psiphon-tunnel-core-x86_64" -config "%s/config.json"
-' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+cd %q || exit 1
+exec firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
+' "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
@@ -641,7 +644,8 @@ check_all_psiphon() {
 start_all_psiphon() {
     generate_start_psiphon_script
     bash "$HOME/psiphon/start-psiphons.sh"
-    pause
+    sleep 1
+    check_all_psiphon
 }
 
 start_all_psiphon_quiet() {
