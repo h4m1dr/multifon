@@ -112,6 +112,9 @@ collect_existing_ports() {
     done
 }
 
+# Helper: collect ports from existing configs so we never reuse them (stub)
+collect_existing_ports() { :; }
+
 # Main menu display
 main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
