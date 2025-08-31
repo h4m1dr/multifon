@@ -1,12 +1,4 @@
-printf '#!/bin/bash
-set -e
-cd %q || exit 1
-if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
-if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
-  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
-fi
-exec firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
-' "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"#!/bin/bash
+#!/bin/bash
 
 # Colors
 RED='\e[91m'
@@ -473,9 +465,14 @@ socks_port="$socks_port_sel"
 
        # Create per-instance start script (Firejail isolation)
        printf '#!/bin/bash
+set -e
 cd %q || exit 1
-exec firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
-' "$dir_path" > "$dir_path/start.sh"
+if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
+if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
+  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
+fi
+exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
+' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
@@ -529,7 +526,7 @@ generate_start_psiphon_script() {
 '    cd - >/dev/null 2>&1 || true; continue' \
 '  fi' \
 '  # choose command (allow NO_FIREJAIL=1 to bypass sandbox for debugging)' \
-'  CMD="firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config config.json"' \
+'  CMD='firejail --quiet --noprofile --private="$(pwd)" --env=HOME="$(pwd)" --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config config.json'' \
 '  if [ -n "$NO_FIREJAIL" ]; then CMD="./psiphon-tunnel-core-x86_64 -config config.json"; fi' \
 '  # if already have a pid but process dead, clear it' \
 '  if [ -f psiphon.firejail.pid ]; then' \
