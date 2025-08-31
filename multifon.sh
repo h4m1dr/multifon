@@ -39,8 +39,7 @@ check_status() {
         psi_status="${RED}✗ Not Found${RESET}"
     fi
     [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
-    loc_count=$( (find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
-              find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | wc -l )
+    loc_count=$( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l )
 
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
@@ -119,7 +118,7 @@ collect_existing_ports() {
         [[ -n "$hp" ]] && used_ports+=("$hp")
         [[ -n "$sp" ]] && used_ports+=("$sp")
     done < <( { find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; \
-                find "$HOME" -maxdepth 2 -type f -name 'config.json' 2>/dev/null; } \
+                } \
               | grep -E '/psiphon-[^/]+/config\.json$' | sort -u )
 }
 
@@ -257,46 +256,47 @@ install_firejail() {
 
 # 3) Psiphon Folder Management
 psiphon_folder_menu() {
-    clear
-    logo
-    check_status
-    echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
-    echo ""
-    echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
-    echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
-    echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
-    echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
-    echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
-    echo ""
-    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-    echo ""
-    read -rp "Select an option [0-5]: " psiphon_folder
-    case $psiphon_folder in
-        1)
-            Creating_Psiphon_folders
-            ;;
-        2)
-            Creating_Psiphon_folders_no_firejail
-            ;;
-        3)
-            check_all_psiphon
-            ;;
-        4)
-            start_all_psiphon
-            ;;
-        5)
-            stop_all_psiphon
-            ;;
-        0)
-            return
-            ;;
-        *)
-            echo -e "${RED}Invalid option.${RESET}"
-            ;;
-    esac
-    psiphon_folder_menu
-    return
+    while true; do
+        clear
+        logo
+        check_status
+        echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
+        echo ""
+        echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
+        echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
+        echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
+        echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
+        echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo ""
+        read -rp "Select an option [0-5]: " psiphon_folder
+        case $psiphon_folder in
+            1)
+                Creating_Psiphon_folders
+                ;;
+            2)
+                Creating_Psiphon_folders_no_firejail
+                ;;
+            3)
+                check_all_psiphon
+                ;;
+            4)
+                start_all_psiphon
+                ;;
+            5)
+                stop_all_psiphon
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Invalid option.${RESET}"; pause
+                ;;
+        esac
+    done
 }
+
 
 # Info file to track locations/ports and paths
 INFO_FILE="$PSIPHON_BASE_DIR/psiphon/INFO.txt"
@@ -336,8 +336,7 @@ info_write_system() {
     if [[ -x "/usr/bin/psiphon" ]]; then psi="yes"; psi_path="/usr/bin/psiphon";
     elif [[ -x "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then psi="yes"; psi_path="/usr/bin/psiphon-tunnel-core-x86_64"; fi
     local fj="no"; command -v firejail >/dev/null 2>&1 && fj="yes"
-    local loc_count=$( (find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
-              find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | wc -l )
+    local loc_count=$( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l )
     local start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
     local autostart="unknown"
     if command -v systemctl >/dev/null 2>&1; then
@@ -478,7 +477,7 @@ generate_start_psiphon_script() {
 'set -e' \
 '' \
 'dirs=()' \
-'while IFS= read -r d; do dirs+=("$d"); done < <( (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u )' \
+'while IFS= read -r d; do dirs+=("$d"); done < <( (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u )' \
 '' \
 'for d in "${dirs[@]}"; do' \
 '  [ -d "$d" ] || continue' \
@@ -559,8 +558,7 @@ setup_autostart_service() {
 
 # Psiphon bulk helpers (status/start/stop)
 psiphon_dirs() {
-    (find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null; \
-     find "$HOME" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null) | sort -u
+    find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u
 }
 
 check_all_psiphon() {
@@ -621,26 +619,27 @@ show_running_psiphon() {
 
 # Cleanup menu
 cleanup_menu() {
-    clear
-    logo
-    check_status
-    echo -e "${YELLOW}Cleanup Options:${RESET}"
-    echo ""
-    echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
-    echo -e "${BLUE} 2) Remove Firejail${RESET}"
-    echo ""
-    echo -e "${BLUE} 0) Back to Main Menu${RESET}"
-    echo ""
-    read -rp "Select an option [0-2]: " clean_option
-    case $clean_option in
-        1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
-        2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
-        0) return ;;
-        *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
-    esac
-    cleanup_menu
-    return
+    while true; do
+        clear
+        logo
+        check_status
+        echo -e "${YELLOW}Cleanup Options:${RESET}"
+        echo ""
+        echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
+        echo -e "${BLUE} 2) Remove Firejail${RESET}"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo ""
+        read -rp "Select an option [0-2]: " clean_option
+        case $clean_option in
+            1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
+            2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
+            0) return ;;
+            *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
+        esac
+    done
 }
+
 
 # Main loop
 while true; do
