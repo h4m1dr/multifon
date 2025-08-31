@@ -1,4 +1,12 @@
-#!/bin/bash
+printf '#!/bin/bash
+set -e
+cd %q || exit 1
+if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
+if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
+  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
+fi
+exec firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
+' "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"#!/bin/bash
 
 # Colors
 RED='\e[91m'
@@ -508,27 +516,37 @@ generate_start_psiphon_script() {
 'for d in "${dirs[@]}"; do' \
 '  [ -d "$d" ] || continue' \
 '  echo "Starting Psiphon: $(basename "$d")"' \
-'  cd "$d" || continue' \
+'  cd "$d" || { echo "ERROR: cannot cd into $d"; continue; }' \
+'  # ensure binary name & executable' \
 '  if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then' \
 '    mv psiphon-tunnel-core psiphon-tunnel-core-x86_64' \
-'    chmod +x psiphon-tunnel-core-x86_64' \
 '  fi' \
-'  if ! command -v firejail >/dev/null 2>&1; then' \
-'    echo "firejail not found; skipping $d"' \
-'    cd - >/dev/null 2>&1 || true' \
-'    continue' \
+'  [ -f psiphon-tunnel-core-x86_64 ] && chmod +x psiphon-tunnel-core-x86_64 || {' \
+'    echo "ERROR: missing binary in $d"; ls -l; cd - >/dev/null 2>&1 || true; continue; }' \
+'  # config check' \
+'  if [ ! -f config.json ]; then' \
+'    echo "ERROR: missing config.json in $d"' \
+'    cd - >/dev/null 2>&1 || true; continue' \
 '  fi' \
+'  # choose command (allow NO_FIREJAIL=1 to bypass sandbox for debugging)' \
+'  CMD="firejail --quiet --noprofile --private=. --whitelist=. --env=HOME=. --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config config.json"' \
+'  if [ -n "$NO_FIREJAIL" ]; then CMD="./psiphon-tunnel-core-x86_64 -config config.json"; fi' \
+'  # if already have a pid but process dead, clear it' \
 '  if [ -f psiphon.firejail.pid ]; then' \
 '    pid=$(cat psiphon.firejail.pid)' \
-'    if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= | grep -q "psiphon-tunnel-core"; then' \
-'      echo "Already running: $(basename "$d")"' \
-'    else' \
-'      rm -f psiphon.firejail.pid' \
-'    fi' \
+'    if ! kill -0 "$pid" 2>/dev/null; then rm -f psiphon.firejail.pid; fi' \
 '  fi' \
 '  if [ ! -f psiphon.firejail.pid ]; then' \
-'    nohup bash ./start.sh > log.txt 2>&1 &' \
+'    nohup bash -c "$CMD" > log.txt 2>&1 &' \
 '    echo $! > psiphon.firejail.pid' \
+'    sleep 2' \
+'    # quick health check' \
+'    if ! kill -0 $(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then' \
+'      echo "ERROR: process exited early in $(basename "$d")"' \
+'      tail -n 40 log.txt 2>/dev/null || true' \
+'    fi' \
+'  else' \
+'    echo "Already running (pid $(cat psiphon.firejail.pid))"' \
 '  fi' \
 '  cd - >/dev/null 2>&1 || true' \
 'done' \
