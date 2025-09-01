@@ -536,22 +536,6 @@ generate_start_psiphon_script() {
     echo -e "${GREEN}Generated:${RESET} $script"
 }
 
-# ... (rest of the script unchanged)
-
-
-add_location_to_start_script() {
-    local code="$1"
-    local script="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
-    [ -f "$script" ] || return
-    # Normalize to UPPERCASE
-    code=$(echo "$code" | tr '[:lower:]' '[:upper:]')
-    # Skip if already present
-    if grep -qE "^codes\+\=\($code\)$" "$script"; then
-        return
-    fi
-    # Append as an array add to preserve structure
-    printf 'codes+=(%s)\n' "$code" >> "$script"
-}
 
 setup_autostart_service() {
     local root="$PSIPHON_BASE_DIR/psiphon"
