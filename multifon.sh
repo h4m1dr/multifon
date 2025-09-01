@@ -64,8 +64,7 @@ port_registry_init() {
 }
 port_registry_used_ports() {
     # prints list of ports (one per line) from registry
-    awk '{print $2"
-"$3}' "$PORT_REG_FILE" 2>/dev/null | awk 'NF'
+    awk '{print $2"\n"$3}' "$PORT_REG_FILE" 2>/dev/null | awk 'NF'
 }
 port_registry_set_entry() {
     # usage: port_registry_set_entry <name> <http_port> <socks_port>
@@ -75,8 +74,7 @@ port_registry_set_entry() {
         flock -w 3 9 || { echo "${YELLOW}Port registry busy, skipping write for $name${RESET}"; exit 0; }
         tmp=$(mktemp)
         grep -v "^${name} " "$PORT_REG_FILE" 2>/dev/null > "$tmp" || true
-        printf '%s %s %s
-' "$name" "$http" "$socks" >> "$tmp"
+        printf '%s %s %s\n' "$name" "$http" "$socks" >> "$tmp"
         mv "$tmp" "$PORT_REG_FILE"
     ) 9>>"$PORT_REG_FILE"
 }
@@ -135,7 +133,7 @@ main_menu() {
     echo ""
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
     echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
-echo ""
+    echo ""
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Cleanup Options${RESET}"
     echo ""
@@ -164,8 +162,8 @@ install_psiphon_menu() {
         echo -e "${BLUE} 5) Remove Psiphon Core Files ${RESET}(manual wipe)"
         echo -e "${BLUE} 6) Remove Only Extra Installer Files ${RESET}(safe wipe)"
         
-echo ""
-echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
@@ -380,12 +378,12 @@ Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
    echo -e "📍 Available Psiphon location codes (use UPPERCASE two-letter codes):"
-echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
-echo -e "   Example: AT,IE,GB"
-echo -e "📍 Enter comma-separated country codes (UPPERCASE):"
+   echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
+   echo -e "   Example: AT,IE,GB"
+   echo -e "📍 Enter comma-separated country codes (UPPERCASE):"
    read -rp "➤ Country codes (UPPERCASE, comma-separated): " raw_countries
-raw_countries=$(echo "$raw_countries" | tr '[:lower:]' '[:upper:]')
-IFS=',' read -ra countries <<< "$raw_countries"
+   raw_countries=$(echo "$raw_countries" | tr '[:lower:]' '[:upper:]')
+   IFS=',' read -ra countries <<< "$raw_countries"
 
    echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb). The prefix 'psiphon-' will be enforced automatically."
    echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
@@ -418,30 +416,32 @@ IFS=',' read -ra countries <<< "$raw_countries"
 
        dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
-       # Locate psiphon core binary from common paths
-core_src=""
-for p in "$PSIPHON_BASE_DIR/psiphon-tunnel-core" \
-         "/usr/bin/psiphon-tunnel-core-x86_64" \
-         "/etc/psiphon/psiphon-tunnel-core-x86_64" \
-         "/etc/psiphon/psiphon-tunnel-core" \
-         "/usr/bin/psiphon"; do
-    [[ -x "$p" ]] && core_src="$p" && break
-done
-if [[ -z "$core_src" ]]; then
-    echo -e "${RED}✗ Psiphon core not found (looked in: $PSIPHON_BASE_DIR, /usr/bin, /etc/psiphon). Skipping $name.${RESET}"
-    continue
-fi
-cp "$core_src" "$dir_path/psiphon-tunnel-core-x86_64"
-chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
 
-# Pick unique, available ports (prefer 8081–8091 and 1081–1091)
-http_port_sel=$(next_free_port_in_range 8081 8091 || true)
-[[ -z "$http_port_sel" ]] && http_port_sel=$(next_free_port_any 8081)
-http_port="$http_port_sel"
+       # Locate psiphon core binary from common paths (prefer system Psiphon first)
+       core_src=""
+       for p in "/etc/psiphon/psiphon-tunnel-core-x86_64" \
+                "/etc/psiphon/psiphon-tunnel-core" \
+                "$PSIPHON_BASE_DIR/psiphon-tunnel-core-x86_64" \
+                "$PSIPHON_BASE_DIR/psiphon-tunnel-core" \
+                "/usr/bin/psiphon-tunnel-core-x86_64" \
+                "/usr/bin/psiphon"; do
+           [[ -x "$p" ]] && core_src="$p" && break
+       done
+       if [[ -z "$core_src" ]]; then
+           echo -e "${RED}✗ Psiphon core not found (looked in: /etc/psiphon, $PSIPHON_BASE_DIR, /usr/bin). Skipping $name.${RESET}"
+           continue
+       fi
+       cp "$core_src" "$dir_path/psiphon-tunnel-core-x86_64"
+       chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
 
-socks_port_sel=$(next_free_port_in_range 1081 1091 || true)
-[[ -z "$socks_port_sel" ]] && socks_port_sel=$(next_free_port_any 1081)
-socks_port="$socks_port_sel"
+       # Pick unique, available ports (prefer 8081–8091 and 1081–1091)
+       http_port_sel=$(next_free_port_in_range 8081 8091 || true)
+       [[ -z "$http_port_sel" ]] && http_port_sel=$(next_free_port_any 8081)
+       http_port="$http_port_sel"
+
+       socks_port_sel=$(next_free_port_in_range 1081 1091 || true)
+       [[ -z "$socks_port_sel" ]] && socks_port_sel=$(next_free_port_any 1081)
+       socks_port="$socks_port_sel"
 
        # Validate selected ports (fail-fast if empty)
        if ! [[ "$http_port" =~ ^[0-9]+$ ]] || ! [[ "$socks_port" =~ ^[0-9]+$ ]]; then
@@ -450,29 +450,10 @@ socks_port="$socks_port_sel"
        fi
 
        # Create config using printf instead of heredoc to avoid EOF issues
-       printf '{
-"LocalHttpProxyPort":%s,
-"LocalSocksProxyPort":%s,
-"EgressRegion":"%s",
-"PropagationChannelId":"FFFFFFFFFFFFFFFF",
-"RemoteServerListDownloadFilename":"remote_server_list",
-"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
-"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
-"SponsorId":"FFFFFFFFFFFFFFFF",
-"UseIndistinguishableTLS":true
-}
-' "$http_port" "$socks_port" "$cc_trimmed" > "$dir_path/config.json"
+       printf '{\n"LocalHttpProxyPort":%s,\n"LocalSocksProxyPort":%s,\n"EgressRegion":"%s",\n"PropagationChannelId":"FFFFFFFFFFFFFFFF",\n"RemoteServerListDownloadFilename":"remote_server_list",\n"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",\n"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",\n"SponsorId":"FFFFFFFFFFFFFFFF",\n"UseIndistinguishableTLS":true\n}\n' "$http_port" "$socks_port" "$cc_trimmed" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
-       printf '#!/bin/bash
-set -e
-cd %q || exit 1
-if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
-if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
-  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
-fi
-exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
-' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+       printf '#!/bin/bash\nset -e\ncd %q || exit 1\nif [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi\nif [ ! -x ./psiphon-tunnel-core-x86_64 ]; then\n  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi\nfi\nexec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json\n' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
@@ -487,8 +468,8 @@ exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns
        ((http_port++))
        ((socks_port++))
 
-   # Append this location code to the start-psiphons.sh array (idempotent)
-   :
+       # Append this location code to the start-psiphons.sh array (idempotent)
+       :
    done
 
    # After creating folders, generate runner and enable autostart
@@ -502,8 +483,7 @@ generate_start_psiphon_script() {
     mkdir -p "$root"
     local script="$root/start-psiphons.sh"
 
-    printf '%s
-' \
+    printf '%s\n' \
 '#!/bin/bash' \
 'set -e' \
 '' \
@@ -526,7 +506,7 @@ generate_start_psiphon_script() {
 '    cd - >/dev/null 2>&1 || true; continue' \
 '  fi' \
 '  # choose command (allow NO_FIREJAIL=1 to bypass sandbox for debugging)' \
-'  CMD='firejail --quiet --noprofile --private="$(pwd)" --env=HOME="$(pwd)" --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config config.json'' \
+"  CMD='"'"'firejail --quiet --noprofile --private="$(pwd)" --env=HOME="$(pwd)" --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config config.json'"'"'" \
 '  if [ -n "$NO_FIREJAIL" ]; then CMD="./psiphon-tunnel-core-x86_64 -config config.json"; fi' \
 '  # if already have a pid but process dead, clear it' \
 '  if [ -f psiphon.firejail.pid ]; then' \
@@ -564,8 +544,7 @@ add_location_to_start_script() {
         return
     fi
     # Append as an array add to preserve structure
-    printf 'codes+=(%s)
-' "$code" >> "$script"
+    printf 'codes+=(%s)\n' "$code" >> "$script"
 }
 
 setup_autostart_service() {
@@ -580,8 +559,7 @@ setup_autostart_service() {
     fi
 
     # Write systemd service using printf (no heredoc)
-    sudo bash -c "printf '%s
-' \
+    sudo bash -c "printf '%s\n' \
 '[Unit]' \
 'Description=Start multiple Psiphon instances with Firejail' \
 'After=network-online.target' \
@@ -739,7 +717,7 @@ cleanup_menu() {
         echo ""
         read -rp "Select an option [0-2]: " clean_option
         case $clean_option in
-            1) rm -rf $HOME/psiphon-* && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
+            1) rm -rf "$HOME/psiphon/psiphon-*" && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
             2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
@@ -761,7 +739,6 @@ while true; do
         2) install_firejail ;;
         3) psiphon_folder_menu ;;
         4) cleanup_menu ;;
-        # 5) cleanup_menu ;;  # removed; cleanup now at 4
         0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
         *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
     esac
