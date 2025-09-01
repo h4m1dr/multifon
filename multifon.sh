@@ -373,7 +373,7 @@ info_write_system() {
     ) 9>>"$INFO_FILE"
 }
 
-# Creating Psiphon folders
+# Creating Psiphon folders (UPDATED per your request)
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
@@ -445,29 +445,10 @@ Creating_Psiphon_folders() {
        fi
 
        # Create config using printf (EgressRegion uses uppercase)
-       printf '{
-"LocalHttpProxyPort":%s,
-"LocalSocksProxyPort":%s,
-"EgressRegion":"%s",
-"PropagationChannelId":"FFFFFFFFFFFFFFFF",
-"RemoteServerListDownloadFilename":"remote_server_list",
-"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
-"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
-"SponsorId":"FFFFFFFFFFFFFFFF",
-"UseIndistinguishableTLS":true
-}
-' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
+       printf '{\n"LocalHttpProxyPort":%s,\n"LocalSocksProxyPort":%s,\n"EgressRegion":"%s",\n"PropagationChannelId":"FFFFFFFFFFFFFFFF",\n"RemoteServerListDownloadFilename":"remote_server_list",\n"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",\n"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",\n"SponsorId":"FFFFFFFFFFFFFFFF",\n"UseIndistinguishableTLS":true\n}\n' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
-       printf '#!/bin/bash
-set -e
-cd %q || exit 1
-if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
-if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
-  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
-fi
-exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
-' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+       printf '#!/bin/bash\nset -e\ncd %q || exit 1\nif [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi\nif [ ! -x ./psiphon-tunnel-core-x86_64 ]; then\n  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi\nfi\nexec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json\n' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
@@ -488,7 +469,7 @@ exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns
    setup_autostart_service
 }
 
-# Generate unified start script based on existing locations and enable autostart
+# Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
     local root="$PSIPHON_BASE_DIR/psiphon"
     mkdir -p "$root"
@@ -509,8 +490,7 @@ generate_start_psiphon_script() {
     # Build explicit array content
     local array_lines=()
     for d in "${dirs[@]}"; do
-        # escape double-quotes and backslashes for safe embedding
-        esc="${d//\/\\}"; esc="${esc//\"/\\"}"
+        esc="${d//\\/\\\\}"; esc="${esc//\"/\\\"}"
         array_lines+=("\"$esc\"")
     done
 
@@ -521,14 +501,13 @@ set -e
 
 # Explicit directories to start (generated from INFO)
 dirs=(
-$(printf "  %s
-" ${array_lines[@]+"${array_lines[@]}"})
+$(printf "  %s\n" ${array_lines[@]+"${array_lines[@]}"})
 )
 
-for d in "\${dirs[@]}"; do
-    [ -d "\$d" ] || { echo "Missing \$d — skipping"; continue; }
-    echo "Starting Psiphon: \$(basename "\$d")"
-    cd "\$d" || { echo "ERROR: cannot cd into \$d"; continue; }
+for d in "${dirs[@]}"; do
+    [ -d "$d" ] || { echo "Missing $d — skipping"; continue; }
+    echo "Starting Psiphon: $(basename "$d")"
+    cd "$d" || { echo "ERROR: cannot cd into $d"; continue; }
 
     # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable
     if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
@@ -538,19 +517,19 @@ for d in "\${dirs[@]}"; do
 
     # Config check
     if [ ! -f config.json ]; then
-        echo "ERROR: missing config.json in \$d"
+        echo "ERROR: missing config.json in $d"
         cd - >/dev/null 2>&1 || true
         continue
     fi
 
     # Run inside a private jail bound to this directory
-    nohup firejail --noprofile --private="\$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-    echo \$! > psiphon.firejail.pid
+    nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+    echo $! > psiphon.firejail.pid
     sleep 1
 
     # Quick health check
-    if ! kill -0 \$(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then
-        echo "ERROR: process exited early in \$(basename "\$d")"
+    if ! kill -0 $(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then
+        echo "ERROR: process exited early in $(basename "$d")"
         tail -n 40 log.txt 2>/dev/null || true
         rm -f psiphon.firejail.pid 2>/dev/null || true
     fi
