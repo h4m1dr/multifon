@@ -469,78 +469,89 @@ Creating_Psiphon_folders() {
    setup_autostart_service
 }
 
+#!/bin/bash
+
+# Colors
+RED='\e[91m'
+GREEN='\e[92m'
+YELLOW='\e[93m'
+BLUE='\e[94m'
+MAGENTA='\e[95m'
+CYAN='\e[96m'
+WHITE='\e[97m'
+BOLD='\e[1m'
+RESET='\e[0m'
+
+# ... (unchanged parts above)
+
 # Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
     local root="$PSIPHON_BASE_DIR/psiphon"
     mkdir -p "$root"
     local script="$root/start-psiphons.sh"
 
-    # Gather directories from INFO file (Folder: <path>), fallback to discovery
-    local dirs=()
+    # Build a list of country codes from INFO (Folder: <path>) or fallback to discovery
+    local codes=()
     if [ -f "$INFO_FILE" ]; then
         while IFS= read -r line; do
-            d="${line#Folder: }"
-            [ -d "$d" ] && dirs+=("$d")
+            f="${line#Folder: }"
+            bn="$(basename "$f")"
+            code="${bn#psiphon-}"
+            [ -n "$code" ] && codes+=("$code")
         done < <(grep -E '^Folder: ' "$INFO_FILE" 2>/dev/null || true)
     fi
-    if [ "${#dirs[@]}" -eq 0 ]; then
-        while IFS= read -r d; do dirs+=("$d"); done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
+    if [ "${#codes[@]}" -eq 0 ]; then
+        while IFS= read -r f; do
+            bn="$(basename "$f")"; code="${bn#psiphon-}"
+            [ -n "$code" ] && codes+=("$code")
+        done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
     fi
 
-    # Build explicit array content
-    local array_lines=()
-    for d in "${dirs[@]}"; do
-        esc="${d//\\/\\\\}"; esc="${esc//\"/\\\"}"
-        array_lines+=("\"$esc\"")
-    done
-
-    # Write the script with explicit list of directories
-    cat > "$script" <<EOF
-#!/bin/bash
-set -e
-
-# Explicit directories to start (generated from INFO)
-dirs=(
-$(printf "  %s\n" ${array_lines[@]+"${array_lines[@]}"})
-)
-
-for d in "${dirs[@]}"; do
-    [ -d "$d" ] || { echo "Missing $d — skipping"; continue; }
-    echo "Starting Psiphon: $(basename "$d")"
-    cd "$d" || { echo "ERROR: cannot cd into $d"; continue; }
-
-    # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable
-    if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
-        mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
-        chmod +x psiphon-tunnel-core-x86_64
+    # De-duplicate while preserving order
+    if [ "${#codes[@]}" -gt 0 ]; then
+        local seen=""
+        local unique=()
+        for c in "${codes[@]}"; do
+            case ",$seen," in
+                *",$c,"*) ;;  # already
+                *) unique+=("$c"); seen+="${seen:+,}$c" ;;
+            esac
+        done
+        codes=("${unique[@]}")
     fi
 
-    # Config check
-    if [ ! -f config.json ]; then
-        echo "ERROR: missing config.json in $d"
-        cd - >/dev/null 2>&1 || true
-        continue
-    fi
-
-    # Run inside a private jail bound to this directory
-    nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-    echo $! > psiphon.firejail.pid
-    sleep 1
-
-    # Quick health check
-    if ! kill -0 $(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then
-        echo "ERROR: process exited early in $(basename "$d")"
-        tail -n 40 log.txt 2>/dev/null || true
-        rm -f psiphon.firejail.pid 2>/dev/null || true
-    fi
-
-    cd - >/dev/null 2>&1 || true
-done
-EOF
+    # Write the script using echo/printf to avoid heredoc escaping issues in online execution
+    {
+        echo "#!/bin/bash"
+        echo
+        echo "# Start multiple Psiphon instances; each runs in its own folder and Firejail private sandbox"
+        echo -n "for dir in"
+        if [ "${#codes[@]}" -gt 0 ]; then
+            for c in "${codes[@]}"; do
+                echo -n " $c"
+            done
+        fi
+        echo "; do"
+        echo '    echo "Starting Psiphon: $dir"'
+        echo '    cd "$HOME/psiphon/psiphon-$dir" || { echo "Skip: folder not found: $HOME/psiphon/psiphon-$dir"; continue; }'
+        echo
+        echo "    # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable"
+        echo '    if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then'
+        echo '        mv psiphon-tunnel-core psiphon-tunnel-core-x86_64'
+        echo '        chmod +x psiphon-tunnel-core-x86_64'
+        echo '    fi'
+        echo
+        echo '    # Run inside a private jail bound to this directory (matches the working method we used)'
+        echo '    nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &'
+        echo 'done'
+    } > "$script"
 
     chmod +x "$script"
     echo -e "${GREEN}Generated:${RESET} $script"
 }
+
+# ... (rest of the script unchanged)
+
 
 add_location_to_start_script() {
     local code="$1"
