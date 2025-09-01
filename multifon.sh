@@ -373,19 +373,64 @@ info_write_system() {
     ) 9>>"$INFO_FILE"
 }
 
-# Creating Psiphon folders (UPDATED per your request)
+# Creating Psiphon folders (with strict validation for ASCII 2-letter country codes)
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
-   echo -e "📍 Enter comma-separated country codes (case-insensitive, e.g., at,IE,gb):"
-   echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
+   # Allowed country codes (2-letter, ASCII)
+   VALID_CODES=(US CA GB DE NL FR IT ES SE NO DK FI PL CZ AT IE CH BE PT GR RO HU BG HR SI SK LT LV EE TR AE SA IN SG JP KR HK TW AU NZ BR AR CL MX ZA)
 
-   read -rp "➤ Country codes: " raw_countries
+   # Helper: check if a code is in VALID_CODES
+   code_is_valid() {
+       local c="$1"; c="${c^^}"    # to UPPERCASE
+       for v in "${VALID_CODES[@]}"; do
+           [[ "$c" == "$v" ]] && return 0
+       done
+       return 1
+   }
 
-   # Normalize: trim, split by comma, remove empties
-   IFS=',' read -ra countries <<< "$raw_countries"
-   for i in "${!countries[@]}"; do
-       countries[$i]=$(echo "${countries[$i]}" | xargs)   # trim
+   # Read and validate countries in a loop until input is valid
+   while true; do
+       echo -e "📍 Enter comma-separated country codes (case-insensitive).\n    Allowed: ${WHITE}${VALID_CODES[*]}${RESET}"
+       read -rp "➤ Country codes: " raw_countries
+       # Normalize: split by comma, trim spaces
+       IFS=',' read -ra _raw <<< "$raw_countries"
+       countries=()
+       invalid=()
+       for x in "${_raw[@]}"; do
+           c="$(echo "$x" | xargs)"                 # trim
+           [[ -z "$c" ]] && continue
+           # Reject anything not A–Z letters
+           if ! [[ "$c" =~ ^[A-Za-z]{2}$ ]]; then
+               invalid+=("$c")
+               continue
+           fi
+           cu="${c^^}"                                # UPPER
+           if code_is_valid "$cu"; then
+               countries+=("$cu")
+           else
+               invalid+=("$c")
+           fi
+       done
+
+       # Deduplicate, preserve order
+       if [[ ${#countries[@]} -gt 0 ]]; then
+           uniq=(); seen=""
+           for c in "${countries[@]}"; do
+               case ",$seen," in *",$c,"*) ;; *) uniq+=("$c"); seen+="${seen:+,}$c" ;; esac
+           done
+           countries=("${uniq[@]}")
+       fi
+
+       if [[ ${#countries[@]} -eq 0 ]]; then
+           echo -e "${RED}✗ No valid codes entered.${RESET}"
+       elif [[ ${#invalid[@]} -gt 0 ]]; then
+           echo -e "${RED}✗ Invalid codes:${RESET} ${invalid[*]}"
+           echo -e "${YELLOW}Please enter only from the allowed two-letter list above.${RESET}"
+       else
+           break
+       fi
+       echo ""
    done
 
    used_ports=()
@@ -403,11 +448,8 @@ Creating_Psiphon_folders() {
    # Ensure start script exists (skeleton) before adding locations
    generate_start_psiphon_script
 
-   for i in "${!countries[@]}"; do
-       cc_raw="${countries[i]}"
-       [[ -z "$cc_raw" ]] && continue
-       cc_upper=$(echo "$cc_raw" | tr '[:lower:]' '[:upper:]')
-       cc_lower=$(echo "$cc_raw" | tr '[:upper:]' '[:lower:]')
+   for cc_upper in "${countries[@]}"; do
+       cc_lower="${cc_upper,,}"
 
        # Folder name always psiphon-<cc_lower>
        name="psiphon-${cc_lower}"
@@ -446,7 +488,7 @@ Creating_Psiphon_folders() {
            continue
        fi
 
-       # Create config using printf (EgressRegion uses uppercase)
+       # Create config using printf (EgressRegion uses uppercase ASCII)
        printf '{\n"LocalHttpProxyPort":%s,\n"LocalSocksProxyPort":%s,\n"EgressRegion":"%s",\n"PropagationChannelId":"FFFFFFFFFFFFFFFF",\n"RemoteServerListDownloadFilename":"remote_server_list",\n"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",\n"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",\n"SponsorId":"FFFFFFFFFFFFFFFF",\n"UseIndistinguishableTLS":true\n}\n' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
@@ -470,7 +512,6 @@ Creating_Psiphon_folders() {
    generate_start_psiphon_script
    setup_autostart_service
 }
-
 
 # Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
@@ -537,6 +578,7 @@ generate_start_psiphon_script() {
     chmod +x "$script"
     echo -e "${GREEN}Generated:${RESET} $script"
 }
+
 
 
 setup_autostart_service() {
