@@ -485,43 +485,18 @@ generate_start_psiphon_script() {
 
     cat > "$script" <<'EOF'
 #!/bin/bash
-set -e
 
-# Start multiple Psiphon instances; each runs in its own folder and Firejail private sandbox
-dirs=()
-while IFS= read -r d; do dirs+=("$d"); done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
-
-for d in "${dirs[@]}"; do
-    [ -d "$d" ] || continue
-    echo "Starting Psiphon: $(basename "$d")"
-    cd "$d" || { echo "ERROR: cannot cd into $d"; continue; }
-
-    # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable
+for dir in gb fr at ch; do
+    echo "Starting Psiphon: $dir"
+    cd ~/psiphon-$dir || continue
+    
+    # If the executable file does not exist, assume it is named psiphon-tunnel-core and rename it
     if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
         mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
         chmod +x psiphon-tunnel-core-x86_64
     fi
-
-    # Config check
-    if [ ! -f config.json ]; then
-        echo "ERROR: missing config.json in $d"
-        cd - >/dev/null 2>&1 || true
-        continue
-    fi
-
-    # Run inside a private jail bound to this directory
-    nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-    echo $! > psiphon.firejail.pid
-    sleep 1
-
-    # Quick health check
-    if ! kill -0 $(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then
-        echo "ERROR: process exited early in $(basename "$d")"
-        tail -n 40 log.txt 2>/dev/null || true
-        rm -f psiphon.firejail.pid 2>/dev/null || true
-    fi
-
-    cd - >/dev/null 2>&1 || true
+    
+    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
 done
 EOF
 
