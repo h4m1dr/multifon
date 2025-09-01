@@ -469,20 +469,6 @@ Creating_Psiphon_folders() {
    setup_autostart_service
 }
 
-#!/bin/bash
-
-# Colors
-RED='\e[91m'
-GREEN='\e[92m'
-YELLOW='\e[93m'
-BLUE='\e[94m'
-MAGENTA='\e[95m'
-CYAN='\e[96m'
-WHITE='\e[97m'
-BOLD='\e[1m'
-RESET='\e[0m'
-
-# ... (unchanged parts above)
 
 # Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
