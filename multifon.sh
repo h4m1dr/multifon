@@ -378,6 +378,8 @@ Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
    echo -e "📍 Enter comma-separated country codes (case-insensitive, e.g., at,IE,gb):"
+   echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
+
    read -rp "➤ Country codes: " raw_countries
 
    # Normalize: trim, split by comma, remove empties
