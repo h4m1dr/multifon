@@ -377,18 +377,14 @@ info_write_system() {
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
 
-   echo -e "📍 Available Psiphon location codes (use UPPERCASE two-letter codes):"
-   echo -e "   US, CA, GB, DE, NL, FR, IT, ES, SE, NO, DK, FI, PL, CZ, AT, IE, CH, BE, PT, GR, RO, HU, BG, HR, SI, SK, LT, LV, EE, TR, AE, SA, IN, SG, JP, KR, HK, TW, AU, NZ, BR, AR, CL, MX, ZA"
-   echo -e "   Example: AT,IE,GB"
-   echo -e "📍 Enter comma-separated country codes (UPPERCASE):"
-   read -rp "➤ Country codes (UPPERCASE, comma-separated): " raw_countries
-   raw_countries=$(echo "$raw_countries" | tr '[:lower:]' '[:upper:]')
-   IFS=',' read -ra countries <<< "$raw_countries"
+   echo -e "📍 Enter comma-separated country codes (case-insensitive, e.g., at,IE,gb):"
+   read -rp "➤ Country codes: " raw_countries
 
-   echo -e "📁 Optionally enter folder names for each country (comma-separated, e.g., myat,myie,mygb). The prefix 'psiphon-' will be enforced automatically."
-   echo -e "ℹ️  If left blank or mismatched count, default names will be used (psiphon-<cc>)"
-   read -rp "➤ Folder names: " raw_names
-   IFS=',' read -ra names <<< "$raw_names"
+   # Normalize: trim, split by comma, remove empties
+   IFS=',' read -ra countries <<< "$raw_countries"
+   for i in "${!countries[@]}"; do
+       countries[$i]=$(echo "${countries[$i]}" | xargs)   # trim
+   done
 
    used_ports=()
    http_port=8081
@@ -406,14 +402,13 @@ Creating_Psiphon_folders() {
    generate_start_psiphon_script
 
    for i in "${!countries[@]}"; do
-       cc="${countries[i]}"
-       cc_trimmed=$(echo "$cc" | xargs | tr '[:lower:]' '[:upper:]')
-       cc_lower=$(echo "$cc_trimmed" | tr '[:upper:]' '[:lower:]')
-       name="${names[i]}"
-       name=$(echo "$name" | xargs | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')
-       [[ -z "$name" ]] && name="psiphon-${cc_lower}"
-       [[ "$name" != psiphon-* ]] && name="psiphon-$name"
+       cc_raw="${countries[i]}"
+       [[ -z "$cc_raw" ]] && continue
+       cc_upper=$(echo "$cc_raw" | tr '[:lower:]' '[:upper:]')
+       cc_lower=$(echo "$cc_raw" | tr '[:upper:]' '[:lower:]')
 
+       # Folder name always psiphon-<cc_lower>
+       name="psiphon-${cc_lower}"
        dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
        mkdir -p "$dir_path"
 
@@ -449,30 +444,46 @@ Creating_Psiphon_folders() {
            continue
        fi
 
-       # Create config using printf instead of heredoc to avoid EOF issues
-       printf '{\n"LocalHttpProxyPort":%s,\n"LocalSocksProxyPort":%s,\n"EgressRegion":"%s",\n"PropagationChannelId":"FFFFFFFFFFFFFFFF",\n"RemoteServerListDownloadFilename":"remote_server_list",\n"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",\n"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",\n"SponsorId":"FFFFFFFFFFFFFFFF",\n"UseIndistinguishableTLS":true\n}\n' "$http_port" "$socks_port" "$cc_trimmed" > "$dir_path/config.json"
+       # Create config using printf (EgressRegion uses uppercase)
+       printf '{
+"LocalHttpProxyPort":%s,
+"LocalSocksProxyPort":%s,
+"EgressRegion":"%s",
+"PropagationChannelId":"FFFFFFFFFFFFFFFF",
+"RemoteServerListDownloadFilename":"remote_server_list",
+"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
+"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
+"SponsorId":"FFFFFFFFFFFFFFFF",
+"UseIndistinguishableTLS":true
+}
+' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
-       printf '#!/bin/bash\nset -e\ncd %q || exit 1\nif [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi\nif [ ! -x ./psiphon-tunnel-core-x86_64 ]; then\n  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi\nfi\nexec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json\n' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+       printf '#!/bin/bash
+set -e
+cd %q || exit 1
+if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
+if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
+  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
+fi
+exec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json
+' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
        port_registry_set_entry "$name" "$http_port" "$socks_port"
 
-       # Write/update info registry
-       info_write "$name" "$cc_trimmed" "$dir_path" "$http_port" "$socks_port"
+       # Write/update info registry (records Folder path)
+       info_write "$name" "$cc_upper" "$dir_path" "$http_port" "$socks_port"
 
-       echo -e "${GREEN}✔ Created $name [Country: $cc_trimmed | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
+       echo -e "${GREEN}✔ Created $name [Country: $cc_upper | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
        used_ports+=("$http_port" "$socks_port")
        ((http_port++))
        ((socks_port++))
-
-       # Append this location code to the start-psiphons.sh array (idempotent)
-       :
    done
 
-   # After creating folders, generate runner and enable autostart
+   # After creating folders, generate runner from INFO and enable autostart
    generate_start_psiphon_script
    setup_autostart_service
 }
@@ -483,20 +494,68 @@ generate_start_psiphon_script() {
     mkdir -p "$root"
     local script="$root/start-psiphons.sh"
 
-    cat > "$script" <<'EOF'
-#!/bin/bash
+    # Gather directories from INFO file (Folder: <path>), fallback to discovery
+    local dirs=()
+    if [ -f "$INFO_FILE" ]; then
+        while IFS= read -r line; do
+            d="${line#Folder: }"
+            [ -d "$d" ] && dirs+=("$d")
+        done < <(grep -E '^Folder: ' "$INFO_FILE" 2>/dev/null || true)
+    fi
+    if [ "${#dirs[@]}" -eq 0 ]; then
+        while IFS= read -r d; do dirs+=("$d"); done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
+    fi
 
-for dir in gb fr at ch; do
-    echo "Starting Psiphon: $dir"
-    cd ~/psiphon-$dir || continue
-    
-    # If the executable file does not exist, assume it is named psiphon-tunnel-core and rename it
+    # Build explicit array content
+    local array_lines=()
+    for d in "${dirs[@]}"; do
+        # escape double-quotes and backslashes for safe embedding
+        esc="${d//\/\\}"; esc="${esc//\"/\\"}"
+        array_lines+=("\"$esc\"")
+    done
+
+    # Write the script with explicit list of directories
+    cat > "$script" <<EOF
+#!/bin/bash
+set -e
+
+# Explicit directories to start (generated from INFO)
+dirs=(
+$(printf "  %s
+" ${array_lines[@]+"${array_lines[@]}"})
+)
+
+for d in "\${dirs[@]}"; do
+    [ -d "\$d" ] || { echo "Missing \$d — skipping"; continue; }
+    echo "Starting Psiphon: \$(basename "\$d")"
+    cd "\$d" || { echo "ERROR: cannot cd into \$d"; continue; }
+
+    # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable
     if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
         mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
         chmod +x psiphon-tunnel-core-x86_64
     fi
-    
-    nohup firejail --private=. ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+
+    # Config check
+    if [ ! -f config.json ]; then
+        echo "ERROR: missing config.json in \$d"
+        cd - >/dev/null 2>&1 || true
+        continue
+    fi
+
+    # Run inside a private jail bound to this directory
+    nohup firejail --noprofile --private="\$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+    echo \$! > psiphon.firejail.pid
+    sleep 1
+
+    # Quick health check
+    if ! kill -0 \$(cat psiphon.firejail.pid 2>/dev/null) 2>/dev/null; then
+        echo "ERROR: process exited early in \$(basename "\$d")"
+        tail -n 40 log.txt 2>/dev/null || true
+        rm -f psiphon.firejail.pid 2>/dev/null || true
+    fi
+
+    cd - >/dev/null 2>&1 || true
 done
 EOF
 
