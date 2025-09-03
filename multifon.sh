@@ -856,9 +856,9 @@ delete_psiphon_folders() {
     echo -e "${RED}About to delete:${RESET}"; for d in "${to_delete[@]}"; do echo "  - $(basename "$d")"; done
     read -rp "Type YES to confirm: " cf; [ "$cf" != "YES" ] && echo "Canceled" && pause && return
     for d in "${to_delete[@]}"; do
-	stop_psiphon_in_dir "$d"
-	rm -rf "$d"
-	echo "Deleted $(basename "$d")"
+        stop_psiphon_in_dir "$d"
+        rm -rf "$d"
+        echo "Deleted $(basename "$d")"
     done
     validate_info_file
     echo -e "${GREEN}Done.${RESET}"; pause
@@ -872,41 +872,17 @@ cleanup_menu() {
         check_status
         echo -e "${YELLOW}Cleanup Options:${RESET}"
         echo ""
-        echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
-        echo -e "${BLUE} 2) Remove Specific Psiphon Folder${RESET}"
-        echo -e "${BLUE} 3) Remove Firejail${RESET}"
+        echo -e "${BLUE} 1) Delete Psiphon Folders (select or ALL)${RESET}"
+        echo -e "${BLUE} 2) Remove Firejail${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-3]: " clean_option
+        read -rp "Select an option [0-2]: " clean_option
         case $clean_option in
-            1)
-                rm -rf "$HOME/psiphon/psiphon-*"
-                echo -e "${GREEN}All Psiphon folders removed.${RESET}"
-                info_write_system
-                pause
-                ;;
-            2)
-                echo -e "${YELLOW}Available Psiphon folders:${RESET}"
-                select f in $(ls -d $HOME/psiphon/psiphon-* 2>/dev/null); do
-                    if [ -n "$f" ]; then
-                        rm -rf "$f"
-                        echo -e "${GREEN}Removed: $f${RESET}"
-                        break
-                    fi
-                done
-                info_write_system
-                pause
-                ;;
-            3)
-                sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"
-                info_write_system
-                pause
-                ;;
-            0)
-                return ;;
-            *)
-                echo -e "${RED}Invalid option.${RESET}"; pause ;;
+            1) delete_psiphon_folders ;;
+            2) sudo apt purge -y firejail && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
+            0) return ;;
+            *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
     done
 }
