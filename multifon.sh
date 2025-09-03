@@ -371,10 +371,10 @@ info_write_system() {
             echo
         } >> "$INFO_FILE"
     ) 9>>"$INFO_FILE"
-}
+
 
 # Function to validate and rebuild INFO file from actual psiphon-* folders
-validate_info_file() {
+
     mkdir -p "$PSIPHON_BASE_DIR/psiphon"
     : > "$INFO_FILE"
     info_write_system
@@ -468,7 +468,7 @@ Creating_Psiphon_folders() {
        done
 
        # Deduplicate, preserve order
-       if [[ ${#countries[@]}" -gt 0 ]]; then
+       if [[ ${#countries[@]} -gt 0 ]]; then
            uniq=(); seen=""
            for c in "${countries[@]}"; do
                case ","$seen"," in *","$c","*) ;; *) uniq+=("$c"); seen+="${seen:+,}$c" ;; esac
