@@ -341,7 +341,7 @@ info_write() {
     ) 9>>"$INFO_FILE"
 }
 
-# System INFO overview writer
+# System INFO overview writer (fixed: NO recursion)
 info_write_system() {
     mkdir -p "$PSIPHON_BASE_DIR/psiphon"; [ -f "$INFO_FILE" ] || : > "$INFO_FILE"
     local psi="no" psi_path=""
@@ -371,40 +371,17 @@ info_write_system() {
             echo
         } >> "$INFO_FILE"
     ) 9>>"$INFO_FILE"
-
-
-
-    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
-    : > "$INFO_FILE"
-    info_write_system
-    while IFS= read -r d; do
-        bn="$(basename "$d")"
-        code="${bn#psiphon-}"; code_up="${code^^}"
-        cfg="$d/config.json"; hp="-"; sp="-"; eg=""
-        if [ -f "$cfg" ]; then
-            if command -v jq >/dev/null 2>&1; then
-                hp=$(jq -r '.LocalHttpProxyPort // "-"' "$cfg")
-                sp=$(jq -r '.LocalSocksProxyPort // "-"' "$cfg")
-                eg=$(jq -r '.EgressRegion // ""' "$cfg")
-            else
-                hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
-                sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
-                eg=$(grep -oE '"EgressRegion"[[:space:]]*:[[:space:]]*"[A-Za-z]{2}"' "$cfg" | grep -oE '"[A-Za-z]{2}"' | tr -d '"')
-            fi
-        fi
-        [[ "$eg" =~ ^[A-Za-z]{2}$ ]] || eg="$code_up"
-        info_write "$bn" "$eg" "$d" "$hp" "$sp"
-    done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
 }
 
-# Function to validate and clean INFO file
+# Function to validate and clean INFO file (allow SYSTEM fields too)
 validate_info_file() {
     local tmp=$(mktemp)
     local valid=0
     if [ -f "$INFO_FILE" ]; then
         while IFS= read -r line; do
             case "$line" in
-                Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|StartScript:*|StartAllScript:*|Firejail:*|Files:*|Date:*|===*===)
+                Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|StartScript:*|StartAllScript:*|Firejail:*|Files:*|Date:*|===*===|\
+PsiphonInstalled:*|PsiphonBinary:*|FirejailInstalled:*|LocationsCount:*|AutostartService:*)
                     echo "$line" >> "$tmp"
                     valid=1
                     ;;
@@ -457,7 +434,7 @@ Creating_Psiphon_folders() {
            if ! [[ "$c" =~ ^[A-Za-z]{2}$ ]]; then
                invalid+=("$c")
                continue
-           fi
+           }
            cu="${c^^}"                                # UPPER
            if code_is_valid "$cu"; then
                countries+=("$cu")
@@ -725,10 +702,10 @@ check_all_psiphon() {
         if [ "$running" -ne 1 ]; then
             detect=0
             if [[ "$hp" =~ ^[0-9]+$ ]]; then
-                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; fi
+                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$hp\\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$hp\\>" && detect=1; fi
             fi
             if [[ "$sp" =~ ^[0-9]+$ ]] && [ "$detect" -ne 1 ]; then
-                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; fi
+                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$sp\\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$sp\\>" && detect=1; fi
             fi
             [ "$detect" -eq 1 ] && running=1
         fi
@@ -782,7 +759,7 @@ stop_all_psiphon() {
     while IFS= read -r d; do
         any=1
         if [ -f "$d/psiphon.firejail.pid" ]; then
-            pid=$(cat "$d/psiphon.firejail.pid")
+            pid=$(cat "$d/psiphon.firejail.pid" 2>/dev/null)
             if kill -0 "$pid" 2>/dev/null; then
                 kill "$pid" 2>/dev/null || true
                 sleep 1
