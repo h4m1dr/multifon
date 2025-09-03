@@ -102,18 +102,22 @@ next_free_port_in_range() {
 # Helper: next free port from a starting point upward (fallback)
 next_free_port_any() {
     local p="$1"
-    while true; do
+    local max_port=65535 # Prevent infinite loop, though highly unlikely
+    while [[ "$p" -le "$max_port" ]]; do
         if ! port_in_use "$p" && ! [[ " ${used_ports[*]} " == *" $p "* ]]; then
             echo "$p"; return 0
         fi
         ((p++))
     done
+    echo -e "${RED}ERROR: Could not find a free port from $1 up to $max_port.${RESET}" >&2
+    return 1
 }
 
-# Helper: collect ports from existing configs so we never reuse them
-collect_existing_ports() {
-    local cfg hp sp
-    while IFS= read -r cfg; do
+# Helper: extract ports from a config.json file
+get_ports_from_config() {
+    local cfg="$1"
+    local hp="" sp=""
+    if [ -f "$cfg" ]; then
         if command -v jq >/dev/null 2>&1; then
             hp=$(jq -r '.LocalHttpProxyPort // empty' "$cfg")
             sp=$(jq -r '.LocalSocksProxyPort // empty' "$cfg")
@@ -121,6 +125,16 @@ collect_existing_ports() {
             hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
             sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
         fi
+    fi
+    echo "$hp $sp"
+}
+
+# Helper: collect ports from existing configs so we never reuse them
+collect_existing_ports() {
+    local cfg ports_line hp sp
+    while IFS= read -r cfg; do
+        ports_line=$(get_ports_from_config "$cfg")
+        read -r hp sp <<< "$ports_line"
         [[ -n "$hp" ]] && used_ports+=("$hp")
         [[ -n "$sp" ]] && used_ports+=("$sp")
     done < <( find "$HOME/psiphon" -maxdepth 2 -type f -name 'config.json' 2>/dev/null \
@@ -176,8 +190,13 @@ install_psiphon_menu() {
                         sudo bash plinstaller2
                     else
                         echo -e "${BLUE}Downloading and running automatic installer...${RESET}"
-                        wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
-                        sudo bash plinstaller2 && rm -f plinstaller2
+                        if wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/plinstaller2 && \
+                            sudo bash plinstaller2; then
+                            echo -e "${GREEN}Psiphon installed successfully.${RESET}"
+                        else
+                            echo -e "${RED}Psiphon installation failed.${RESET}"
+                        fi
+                        rm -f plinstaller2
                     fi
                 fi
                 pause
@@ -187,23 +206,33 @@ install_psiphon_menu() {
                     echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
                 else
                     echo -e "${BLUE}Running manual installation...${RESET}"
-                    git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
-                    cd ~/PsiphonLinux/archive && \
-                    chmod +x psiphon-tunnel-core-x86_64 psiphon.sh
+                    if git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
+                        cd ~/PsiphonLinux/archive && \
+                        chmod +x psiphon-tunnel-core-x86_64 psiphon.sh; then
+                        echo -e "${GREEN}Manual installation files prepared.${RESET}"
+                        echo -e "${YELLOW}Note: This option is for preparing files. You may need to manually copy the binary to a system PATH.${RESET}"
+                    else
+                        echo -e "${RED}Manual installation failed.${RESET}"
+                    fi
                 fi
                 pause
                 ;;
             3)
                 latest_url="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
                 temp_file="/tmp/psiphon-latest"
-                wget -q -O "$temp_file" "$latest_url"
-                if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
-                    echo -e "${GREEN}Already up to date.${RESET}"
-                    rm -f "$temp_file"
+                echo -e "${BLUE}Downloading latest Psiphon binary...${RESET}"
+                if wget -q -O "$temp_file" "$latest_url"; then
+                    if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
+                        echo -e "${GREEN}Already up to date.${RESET}"
+                        rm -f "$temp_file"
+                    else
+                        echo -e "${BLUE}Updating to latest version...${RESET}"
+                        sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
+                        sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                        echo -e "${GREEN}Psiphon binary updated successfully.${RESET}"
+                    fi
                 else
-                    echo -e "${BLUE}Updating to latest version...${RESET}"
-                    sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
-                    sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+                    echo -e "${RED}Failed to download latest binary.${RESET}"
                 fi
                 pause
                 ;;
@@ -212,19 +241,26 @@ install_psiphon_menu() {
                     echo -e "${YELLOW}Psiphon is not installed.${RESET}"
                 else
                     echo -e "${RED}Uninstalling Psiphon...${RESET}"
-                    wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
-                    sudo bash pluninstaller && rm -f pluninstaller
+                    if wget -q https://raw.githubusercontent.com/SpherionOS/PsiphonLinux/main/pluninstaller && \
+                        sudo bash pluninstaller; then
+                        echo -e "${GREEN}Psiphon uninstalled successfully.${RESET}"
+                    else
+                        echo -e "${RED}Psiphon uninstallation failed.${RESET}"
+                    fi
+                    rm -f pluninstaller
                 fi
                 pause
                 ;;
             5)
                 echo -e "${RED}Removing core files...${RESET}"
                 sudo find /usr/bin /etc "$HOME" -type f -name "psiphon*" -exec rm -f {} +
+                echo -e "${GREEN}Core files removed.${RESET}"
                 pause
                 ;;
             6)
                 echo -e "${YELLOW}Removing only extra installer files...${RESET}"
                 sudo find /usr/bin /etc "$HOME" -type f \( -name "plinstaller2" -o -name "pluninstaller" \) -exec rm -f {} +
+                echo -e "${GREEN}Extra installer files removed.${RESET}"
                 pause
                 ;;
             0)
@@ -246,8 +282,7 @@ install_firejail() {
         echo -e "${GREEN}Firejail is already installed.${RESET}"
     else
         echo -e "${YELLOW}Installing Firejail...${RESET}"
-        sudo apt update && sudo apt install -y firejail
-        if [ $? -eq 0 ]; then
+        if sudo apt update && sudo apt install -y firejail; then
             echo -e "${GREEN}Firejail installed successfully.${RESET}"
         else
             echo -e "${RED}Failed to install Firejail.${RESET}"
@@ -317,11 +352,14 @@ info_write() {
     local start="$dir/start.sh"
     local start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
     local files
-    files=$(ls -1 "$dir" 2>/dev/null | sed 's/^/  - /')
+    # Only list top-level files to avoid too much verbosity, but ensure core files are there
+    files=$(ls -1 "$dir" 2>/dev/null | grep -E '^(config\.json|start\.sh|psiphon-tunnel-core-x86_64|log\.txt)$' | sed 's/^/  - /')
     (
         flock -w 3 9 || exit 0
         # Remove existing block for this name
-        sed -i "/^=== $name ===$/,/^=== END $name ===$/d" "$INFO_FILE" 2>/dev/null || true
+        # Use awk for more robust block removal across different sed versions
+        awk -v name="=== $name ===" '/^=== SYSTEM ===$/{in_system=1} /^=== END SYSTEM ===$/{in_system=0} in_system==0 && $0 ~ name {while(!/^=== END '$name' ===$/){getline;}} {print}' "$INFO_FILE" > "$INFO_FILE.tmp" && mv "$INFO_FILE.tmp" "$INFO_FILE" 2>/dev/null || true
+
         {
             echo "=== $name ==="
             echo "Folder: $dir"
@@ -357,7 +395,9 @@ info_write_system() {
     fi
     (
         flock -w 3 9 || exit 0
-        sed -i "/^=== SYSTEM ===$/,/^=== END SYSTEM ===$/d" "$INFO_FILE" 2>/dev/null || true
+        # Robust block removal for SYSTEM block using awk
+        awk '/^=== SYSTEM ===$/{p=1} p!=1{print} /^=== END SYSTEM ===$/{p=0; print}' "$INFO_FILE" > "$INFO_FILE.tmp" && mv "$INFO_FILE.tmp" "$INFO_FILE" 2>/dev/null || true
+
         {
             echo "=== SYSTEM ==="
             echo "PsiphonInstalled: $psi"
@@ -376,28 +416,49 @@ info_write_system() {
 # Function to validate and clean INFO file (allow SYSTEM fields too)
 validate_info_file() {
     local tmp=$(mktemp)
-    local valid=0
+    local valid_section=0
+    local current_section=""
     if [ -f "$INFO_FILE" ]; then
         while IFS= read -r line; do
-            case "$line" in
-                Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|StartScript:*|StartAllScript:*|Firejail:*|Files:*|Date:*|===*===|\
-PsiphonInstalled:*|PsiphonBinary:*|FirejailInstalled:*|LocationsCount:*|AutostartService:*)
+            if [[ "$line" =~ ^=== ]]; then
+                current_section=$(echo "$line" | sed -E 's/=== (.*) ===/\1/')
+                echo "$line" >> "$tmp"
+                valid_section=1
+            elif [[ "$line" =~ ^=== END ]]; then
+                echo "$line" >> "$tmp"
+                valid_section=0
+                current_section=""
+            elif [[ -n "$current_section" ]]; then
+                # Check line based on current section (basic validation)
+                if [[ "$current_section" == "SYSTEM" ]]; then
+                    if [[ "$line" =~ ^(PsiphonInstalled|PsiphonBinary|FirejailInstalled|LocationsCount|StartAllScript|AutostartService|Date): ]]; then
+                        echo "$line" >> "$tmp"
+                    else
+                        echo -e "${YELLOW}Removed invalid line from INFO (SYSTEM section): $line${RESET}"
+                    fi
+                elif [[ "$current_section" =~ ^psiphon- ]]; then # Dynamic psiphon-XXX sections
+                    if [[ "$line" =~ ^(Folder|Egress|HTTP|SOCKS|Binary|StartScript|StartAllScript|Firejail|Files|Date): ]]; then
+                        echo "$line" >> "$tmp"
+                    else
+                        echo -e "${YELLOW}Removed invalid line from INFO ($current_section section): $line${RESET}"
+                    fi
+                else
+                    echo -e "${YELLOW}Removed unknown section line from INFO: $line${RESET}"
+                fi
+            else # Lines outside any section
+                if [[ -z "$line" ]]; then # Allow empty lines outside sections
                     echo "$line" >> "$tmp"
-                    valid=1
-                    ;;
-                "")
-                    echo "$line" >> "$tmp"
-                    ;;
-                *)
-                    echo -e "${YELLOW}Removed invalid line from INFO: $line${RESET}"
-                    ;;
-            esac
+                else
+                    echo -e "${YELLOW}Removed stray line from INFO: $line${RESET}"
+                fi
+            fi
         done < "$INFO_FILE"
         mv "$tmp" "$INFO_FILE"
     else
         : > "$INFO_FILE"
     fi
 }
+
 
 # Creating Psiphon folders (with strict validation for ASCII 2-letter country codes)
 Creating_Psiphon_folders() {
@@ -434,7 +495,7 @@ Creating_Psiphon_folders() {
            if ! [[ "$c" =~ ^[A-Za-z]{2}$ ]]; then
                invalid+=("$c")
                continue
-           }
+           fi
            cu="${c^^}"                                # UPPER
            if code_is_valid "$cu"; then
                countries+=("$cu")
@@ -463,16 +524,11 @@ Creating_Psiphon_folders() {
        echo ""
    done
 
+   # Initialize used_ports with global registered ports and existing config ports
    used_ports=()
-   http_port=8081
-   socks_port=1081
-
-   # Initialize and import persistent port registry
    port_registry_init
    mapfile -t _reserved_ports < <(port_registry_used_ports)
    if [[ ${#_reserved_ports[@]} -gt 0 ]]; then used_ports+=("${_reserved_ports[@]}"); fi
-
-   # Also collect ports already present in existing config.json files
    collect_existing_ports
 
    # Ensure start script exists (skeleton) before adding locations
@@ -504,16 +560,17 @@ Creating_Psiphon_folders() {
        chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
 
        # Pick unique, available ports (prefer 8081–8091 and 1081–1091)
-       http_port_sel=$(next_free_port_in_range 8081 8091 || true)
-       [[ -z "$http_port_sel" ]] && http_port_sel=$(next_free_port_any 8081)
-       http_port="$http_port_sel"
+       # Use a new variable for current iteration's ports
+       local current_http_port="" current_socks_port=""
 
-       socks_port_sel=$(next_free_port_in_range 1081 1091 || true)
-       [[ -z "$socks_port_sel" ]] && socks_port_sel=$(next_free_port_any 1081)
-       socks_port="$socks_port_sel"
+       current_http_port=$(next_free_port_in_range 8081 8091 || true)
+       [[ -z "$current_http_port" ]] && current_http_port=$(next_free_port_any 8092) # Start higher if range full
+       
+       current_socks_port=$(next_free_port_in_range 1081 1091 || true)
+       [[ -z "$current_socks_port" ]] && current_socks_port=$(next_free_port_any 1092) # Start higher if range full
 
        # Validate selected ports (fail-fast if empty)
-       if ! [[ "$http_port" =~ ^[0-9]+$ ]] || ! [[ "$socks_port" =~ ^[0-9]+$ ]]; then
+       if ! [[ "$current_http_port" =~ ^[0-9]+$ ]] || ! [[ "$current_socks_port" =~ ^[0-9]+$ ]]; then
            echo -e "${RED}✗ Failed to allocate ports for $name. Skipping.${RESET}"
            continue
        fi
