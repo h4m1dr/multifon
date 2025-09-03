@@ -306,7 +306,7 @@ psiphon_folder_menu() {
     done
 }
 
-
+# Function to validate and rebuild INFO file from actual psiphon-* folders
 # Info file to track locations/ports and paths
 INFO_FILE="$PSIPHON_BASE_DIR/psiphon/INFO.txt"
 info_write() {
@@ -373,7 +373,6 @@ info_write_system() {
     ) 9>>"$INFO_FILE"
 
 
-# Function to validate and rebuild INFO file from actual psiphon-* folders
 
     mkdir -p "$PSIPHON_BASE_DIR/psiphon"
     : > "$INFO_FILE"
