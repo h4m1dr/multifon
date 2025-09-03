@@ -373,9 +373,62 @@ info_write_system() {
     ) 9>>"$INFO_FILE"
 }
 
+# Function to validate and rebuild INFO file from actual psiphon-* folders
+validate_info_file() {
+    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+    : > "$INFO_FILE"
+    info_write_system
+    while IFS= read -r d; do
+        bn="$(basename "$d")"
+        code="${bn#psiphon-}"; code_up="${code^^}"
+        cfg="$d/config.json"; hp="-"; sp="-"; eg=""
+        if [ -f "$cfg" ]; then
+            if command -v jq >/dev/null 2>&1; then
+                hp=$(jq -r '.LocalHttpProxyPort // "-"' "$cfg")
+                sp=$(jq -r '.LocalSocksProxyPort // "-"' "$cfg")
+                eg=$(jq -r '.EgressRegion // ""' "$cfg")
+            else
+                hp=$(grep -oE '"LocalHttpProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+                sp=$(grep -oE '"LocalSocksProxyPort"[[:space:]]*:[[:space:]]*[0-9]+' "$cfg" | grep -oE '[0-9]+' | head -n1)
+                eg=$(grep -oE '"EgressRegion"[[:space:]]*:[[:space:]]*"[A-Za-z]{2}"' "$cfg" | grep -oE '"[A-Za-z]{2}"' | tr -d '"')
+            fi
+        fi
+        [[ "$eg" =~ ^[A-Za-z]{2}$ ]] || eg="$code_up"
+        info_write "$bn" "$eg" "$d" "$hp" "$sp"
+    done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
+}
+
+# Function to validate and clean INFO file
+validate_info_file() {
+    local tmp=$(mktemp)
+    local valid=0
+    if [ -f "$INFO_FILE" ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|StartScript:*|StartAllScript:*|Firejail:*|Files:*|Date:*|===*===)
+                    echo "$line" >> "$tmp"
+                    valid=1
+                    ;;
+                "")
+                    echo "$line" >> "$tmp"
+                    ;;
+                *)
+                    echo -e "${YELLOW}Removed invalid line from INFO: $line${RESET}"
+                    ;;
+            esac
+        done < "$INFO_FILE"
+        mv "$tmp" "$INFO_FILE"
+    else
+        : > "$INFO_FILE"
+    fi
+}
+
 # Creating Psiphon folders (with strict validation for ASCII 2-letter country codes)
 Creating_Psiphon_folders() {
    echo -e "${CYAN}🔧 Creating Psiphon folders...${RESET}"
+
+   # Validate INFO file first
+   validate_info_file
 
    # Allowed country codes (2-letter, ASCII)
    VALID_CODES=(US CA GB DE NL FR IT ES SE NO DK FI PL CZ AT IE CH BE PT GR RO HU BG HR SI SK LT LV EE TR AE SA IN SG JP KR HK TW AU NZ BR AR CL MX ZA)
@@ -391,7 +444,8 @@ Creating_Psiphon_folders() {
 
    # Read and validate countries in a loop until input is valid
    while true; do
-       echo -e "📍 Enter comma-separated country codes (case-insensitive).\n    Allowed: ${WHITE}${VALID_CODES[*]}${RESET}"
+       echo -e "📍 Enter comma-separated country codes (case-insensitive).
+    Allowed: ${WHITE}${VALID_CODES[*]}${RESET}"
        read -rp "➤ Country codes: " raw_countries
        # Normalize: split by comma, trim spaces
        IFS=',' read -ra _raw <<< "$raw_countries"
@@ -414,10 +468,10 @@ Creating_Psiphon_folders() {
        done
 
        # Deduplicate, preserve order
-       if [[ ${#countries[@]} -gt 0 ]]; then
+       if [[ ${#countries[@]}" -gt 0 ]]; then
            uniq=(); seen=""
            for c in "${countries[@]}"; do
-               case ",$seen," in *",$c,"*) ;; *) uniq+=("$c"); seen+="${seen:+,}$c" ;; esac
+               case ","$seen"," in *","$c","*) ;; *) uniq+=("$c"); seen+="${seen:+,}$c" ;; esac
            done
            countries=("${uniq[@]}")
        fi
@@ -489,10 +543,29 @@ Creating_Psiphon_folders() {
        fi
 
        # Create config using printf (EgressRegion uses uppercase ASCII)
-       printf '{\n"LocalHttpProxyPort":%s,\n"LocalSocksProxyPort":%s,\n"EgressRegion":"%s",\n"PropagationChannelId":"FFFFFFFFFFFFFFFF",\n"RemoteServerListDownloadFilename":"remote_server_list",\n"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",\n"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",\n"SponsorId":"FFFFFFFFFFFFFFFF",\n"UseIndistinguishableTLS":true\n}\n' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
+       printf '{
+"LocalHttpProxyPort":%s,
+"LocalSocksProxyPort":%s,
+"EgressRegion":"%s",
+"PropagationChannelId":"FFFFFFFFFFFFFFFF",
+"RemoteServerListDownloadFilename":"remote_server_list",
+"RemoteServerListSignaturePublicKey":"MIICIDANBgkqhkiG9w0BAQEFAAOCAg0AMIICCAKCAgEAt7Ls+/39r+T6zNW7GiVpJfzq/xvL9SBH5rIFnk0RXYEYavax3WS6HOD35eTAqn8AniOwiH+DOkvgSKF2caqk/y1dfq47Pdymtwzp9ikpB1C5OfAysXzBiwVJlCdajBKvBZDerV1cMvRzCKvKwRmvDmHgphQQ7WfXIGbRbmmk6opMBh3roE42KcotLFtqp0RRwLtcBRNtCdsrVsjiI1Lqz/lH+T61sGjSjQ3CHMuZYSQJZo/KrvzgQXpkaCTdbObxHqb6/+i1qaVOfEsvjoiyzTxJADvSytVtcTjijhPEV6XskJVHE1Zgl+7rATr/pDQkw6DPCNBS1+Y6fy7GstZALQXwEDN/qhQI9kWkHijT8ns+i1vGg00Mk/6J75arLhqcodWsdeG/M/moWgqQAnlZAGVtJI1OgeF5fsPpXu4kctOfuZlGjVZXQNW34aOzm8r8S0eVZitPlbhcPiR4gT/aSMz/wd8lZlzZYsje/Jr8u/YtlwjjreZrGRmG8KMOzukV3lLmMppXFMvl4bxv6YFEmIuTsOhbLTwFgh7KYNjodLj/LsqRVfwz31PgWQFTEPICV7GCvgVlPRxnofqKSjgTWI4mxDhBpVcATvaoBl1L/6WLbFvBsoAUBItWwctO2xalKxF5szhGm8lccoc5MZr8kfE0uxMgsxz4er68iCID+rsCAQM=",
+"RemoteServerListUrl":"https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
+"SponsorId":"FFFFFFFFFFFFFFFF",
+"UseIndistinguishableTLS":true
+}
+' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
 
        # Create per-instance start script (Firejail isolation)
-       printf '#!/bin/bash\nset -e\ncd %q || exit 1\nif [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi\nif [ ! -x ./psiphon-tunnel-core-x86_64 ]; then\n  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi\nfi\nexec firejail --quiet --noprofile --private=%q --env=HOME=%q --dns=1.1.1.1 --dns=8.8.8.8 ./psiphon-tunnel-core-x86_64 -config ./config.json\n' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+       printf '#!/bin/bash
+set -e
+cd %q || exit 1
+if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
+if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
+  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
+fi
+exec firejail --quiet --noprofile --private=%q --env=HOME=%q ./psiphon-tunnel-core-x86_64 -config ./config.json
+' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
        chmod +x "$dir_path/start.sh"
 
        # Save allocation into registry (idempotent per name)
@@ -512,6 +585,8 @@ Creating_Psiphon_folders() {
    generate_start_psiphon_script
    setup_autostart_service
 }
+
+
 
 # Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
@@ -736,7 +811,42 @@ show_running_psiphon() {
     read -n 1 -s
 }
 
-# Cleanup menu
+# Cleanup helpers
+delete_psiphon_folders() {
+    echo -e "${YELLOW}Select folders to delete:${RESET}"
+    mapfile -t LIST < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
+    if [ ${#LIST[@]} -eq 0 ]; then
+        echo -e "${RED}No psiphon-* folders found.${RESET}"; pause; return
+    fi
+    i=1; for d in "${LIST[@]}"; do echo "  $i) $(basename "$d")"; ((i++)); done
+    echo "  a) ALL"
+    echo "  0) Cancel"
+    read -rp "Enter numbers (comma-separated), 'a' for ALL, or 0 to cancel: " sel
+    [[ "$sel" == "0" ]] && return
+    to_delete=()
+    if [[ "$sel" == "a" || "$sel" == "A" ]]; then
+        to_delete=("${LIST[@]}")
+    else
+        IFS=',' read -ra idx <<< "$sel"
+        for x in "${idx[@]}"; do
+            x="$(echo "$x" | xargs)"; [[ -z "$x" ]] && continue
+            if [[ "$x" =~ ^[0-9]+$ ]] && [ "$x" -ge 1 ] && [ "$x" -le ${#LIST[@]} ]; then
+                to_delete+=("${LIST[$((x-1))]}")
+            fi
+        done
+    fi
+    if [ ${#to_delete[@]} -eq 0 ]; then echo -e "${RED}Nothing selected.${RESET}"; pause; return; fi
+    echo -e "${RED}About to delete:${RESET}"; for d in "${to_delete[@]}"; do echo "  - $(basename "$d")"; done
+    read -rp "Type YES to confirm: " cf; [ "$cf" != "YES" ] && echo "Canceled" && pause && return
+    for d in "${to_delete[@]}"; do
+        rm -rf "$d"
+        echo "Deleted $(basename "$d")"
+    done
+    validate_info_file
+    echo -e "${GREEN}Done.${RESET}"; pause
+}
+
+# Cleanup menu (updated)
 cleanup_menu() {
     while true; do
         clear
@@ -745,16 +855,40 @@ cleanup_menu() {
         echo -e "${YELLOW}Cleanup Options:${RESET}"
         echo ""
         echo -e "${BLUE} 1) Remove All Psiphon Folders${RESET}"
-        echo -e "${BLUE} 2) Remove Firejail${RESET}"
+        echo -e "${BLUE} 2) Remove Specific Psiphon Folder${RESET}"
+        echo -e "${BLUE} 3) Remove Firejail${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-2]: " clean_option
+        read -rp "Select an option [0-3]: " clean_option
         case $clean_option in
-            1) rm -rf "$HOME/psiphon/psiphon-*" && echo -e "${GREEN}All Psiphon folders removed.${RESET}"; info_write_system; pause ;;
-            2) sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
-            0) return ;;
-            *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
+            1)
+                rm -rf "$HOME/psiphon/psiphon-*"
+                echo -e "${GREEN}All Psiphon folders removed.${RESET}"
+                info_write_system
+                pause
+                ;;
+            2)
+                echo -e "${YELLOW}Available Psiphon folders:${RESET}"
+                select f in $(ls -d $HOME/psiphon/psiphon-* 2>/dev/null); do
+                    if [ -n "$f" ]; then
+                        rm -rf "$f"
+                        echo -e "${GREEN}Removed: $f${RESET}"
+                        break
+                    fi
+                done
+                info_write_system
+                pause
+                ;;
+            3)
+                sudo apt purge firejail -y && echo -e "${GREEN}Firejail removed.${RESET}"
+                info_write_system
+                pause
+                ;;
+            0)
+                return ;;
+            *)
+                echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
     done
 }
