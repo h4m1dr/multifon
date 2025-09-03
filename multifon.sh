@@ -811,6 +811,23 @@ show_running_psiphon() {
     read -n 1 -s
 }
 
+
+stop_psiphon_in_dir() {
+    local d="$1"
+    if [ -f "$d/psiphon.firejail.pid" ]; then
+        pid=$(cat "$d/psiphon.firejail.pid" 2>/dev/null)
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        rm -f "$d/psiphon.firejail.pid"
+    fi
+}
+
+
+
+
 # Cleanup helpers
 delete_psiphon_folders() {
     echo -e "${YELLOW}Select folders to delete:${RESET}"
@@ -839,8 +856,9 @@ delete_psiphon_folders() {
     echo -e "${RED}About to delete:${RESET}"; for d in "${to_delete[@]}"; do echo "  - $(basename "$d")"; done
     read -rp "Type YES to confirm: " cf; [ "$cf" != "YES" ] && echo "Canceled" && pause && return
     for d in "${to_delete[@]}"; do
-        rm -rf "$d"
-        echo "Deleted $(basename "$d")"
+	stop_psiphon_in_dir "$d"
+	rm -rf "$d"
+	echo "Deleted $(basename "$d")"
     done
     validate_info_file
     echo -e "${GREEN}Done.${RESET}"; pause
