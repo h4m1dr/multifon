@@ -30,24 +30,32 @@ Run the script directly:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/h4m1dr/multifon/main/multifon.sh)
-Or clone the repository:
+```
 
-bash
-Copy code
+Or clone the repository:
+```bash
 git clone https://github.com/h4m1dr/multifon.git
 cd multifon
 bash multifon.sh
+```
+
+---
+
 📖 Usage
 When you run the script, you will see an interactive menu:
 
-mathematica
-Copy code
+```bash
 Main Menu:
  1) Psiphon Installation Menu
  2) Install Firejail
  3) Psiphon Folder Management
  4) Cleanup Options
  0) Exit
+
+```
+
+---
+
 Example Workflows
 Install Psiphon
 Choose option 1 → Automatic Global Installation.
@@ -69,17 +77,19 @@ Enable autostart
 The script automatically sets up a systemd service:
 multifon-psiphon.service
 
+---
+
 📂 Folder Structure
 Each configured Psiphon instance is stored under:
 
-pgsql
-Copy code
 ~/psiphon/psiphon-<cc>
  ├─ config.json
  ├─ psiphon-tunnel-core-x86_64
  ├─ start.sh
  └─ log.txt
 Where <cc> is the 2-letter country code (e.g. us, de, nl).
+
+---
 
 🛠 Cleanup
 Delete specific or all psiphon-* folders
@@ -96,6 +106,8 @@ bash, wget, git
 firejail (auto-installable from menu)
 
 systemd (for autostart service)
+
+---
 
 📜 License
 
