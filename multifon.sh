@@ -467,7 +467,7 @@ Creating_Psiphon_folders() {
            if ! [[ "$c" =~ ^[A-Za-z]{2}$ ]]; then
                invalid+=("$c")
                continue
-           }
+           fi
            cu="${c^^}"                                # UPPER
            if code_is_valid "$cu"; then
                countries+=("$cu")
