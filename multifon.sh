@@ -78,6 +78,17 @@ port_registry_set_entry() {
         mv "$tmp" "$PORT_REG_FILE"
     ) 9>>"$PORT_REG_FILE"
 }
+port_registry_del_entry() {
+    # usage: port_registry_del_entry <name>
+    local name="$1"
+    [ -f "$PORT_REG_FILE" ] || return 0
+    (
+        flock -w 3 9 || exit 0
+        tmp=$(mktemp)
+        grep -v "^${name} " "$PORT_REG_FILE" 2>/dev/null > "$tmp" || true
+        mv "$tmp" "$PORT_REG_FILE"
+    ) 9>>"$PORT_REG_FILE"
+}
 
 # Helper: check if a port is in use (ss/netstat fallback)
 port_in_use() {
