@@ -876,11 +876,46 @@ delete_psiphon_folders() {
     echo -e "${RED}About to delete:${RESET}"; for d in "${to_delete[@]}"; do echo "  - $(basename "$d")"; done
     read -rp "Type YES to confirm: " cf; [ "$cf" != "YES" ] && echo "Canceled" && pause && return
     for d in "${to_delete[@]}"; do
+        local bname
+        bname="$(basename "$d")"
+
+        # Stop running firejail instance for this directory
         stop_psiphon_in_dir "$d"
+
+        # Release allocated ports from persistent registry
+        port_registry_del_entry "$bname"
+
+        # Remove location block from INFO.txt
+        if [ -f "$INFO_FILE" ]; then
+            tmp_info=$(mktemp)
+            awk -v label="$bname" '
+                BEGIN { inblk=0 }
+                $0==("=== "label" ===") { inblk=1; next }
+                $0==("=== END "label" ===") { inblk=0; next }
+                !inblk { print }
+            ' "$INFO_FILE" > "$tmp_info" && mv "$tmp_info" "$INFO_FILE"
+        fi
+
+        # Wipe folder from filesystem
         rm -rf "$d"
-        echo "Deleted $(basename "$d")"
+        echo "Deleted $bname"
     done
+
+    # Re-generate launcher script without removed instances
+    generate_start_psiphon_script
+
+    # Validate INFO file and update system overview metrics
     validate_info_file
+    info_write_system
+
+    # Reload systemd service to reflect updated launcher script
+    if command -v systemctl >/dev/null 2>&1; then
+        sudo systemctl daemon-reload
+        if systemctl is-active --quiet multifon-psiphon.service; then
+            sudo systemctl restart multifon-psiphon.service
+        fi
+    fi
+
     echo -e "${GREEN}Done.${RESET}"; pause
 }
 
