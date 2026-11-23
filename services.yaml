@@ -1,0 +1,51 @@
+# multifon v2.1 — per-service egress recommendations.
+# Based on hamidr's own measurements (IPFighter scores + opening the
+# sites from his Chrome) and the services' published availability —
+# not on guesses.
+#
+# One warning that applies to every entry: flagging is per-IP reputation,
+# not per-country. A clean IP in DE beats a dirty IP in the US. Verify
+# the actual exit IP with `multifon fix` + the health check (menu 5 → 2)
+# instead of trusting a country code. The order below is a starting
+# order, not a guarantee.
+#
+# "not_fixed_server_side" is the same for every service on purpose:
+# timezone, browser language and non-residential IPs cannot be fixed
+# from the server. See docs/SERVICES.md for the full checklist.
+
+services:
+  - name: gemini
+    url: https://gemini.google.com
+    recommended: [DE, NL, SE, SG]
+    why: "Gemini is available in 150+ countries including DE/NL/SE/SG. His Sweden IPv6 exit opened gemini.google.com normally; EU exits showed the least friction in his tests."
+    not_fixed_server_side: [timezone, language, non-residential]
+
+  - name: qwen
+    url: https://chat.qwen.ai
+    recommended: [SG, JP, DE]
+    why: "Qwen Chat opens without a VPN in most regions, and his Sweden exit opened it normally (Qwen3.7-Plus). Alibaba's international endpoints are Singapore / US / Frankfurt, so SG and DE are close to the service."
+    not_fixed_server_side: [timezone, language, non-residential]
+
+  - name: muse
+    url: https://muse.ai
+    recommended: [WARP, DE, NL]
+    why: "muse.ai sits behind Cloudflare, so WARP (Cloudflare's own network, Phase 4) is the least likely to be challenged; otherwise a clean DE/NL Psiphon IP. NOTE: his muse.ai failure was a local Chrome extension block (ERR_BLOCKED_BY_CLIENT), not the exit IP — check extensions before blaming the country."
+    not_fixed_server_side: [timezone, language, non-residential]
+
+  - name: flow
+    url: https://labs.google/fx
+    recommended: [DE, NL, SE, SG]
+    why: "Google Flow — same infrastructure and availability as Gemini, so the same order applies."
+    not_fixed_server_side: [timezone, language, non-residential]
+
+  - name: chatgpt
+    url: https://chatgpt.com
+    recommended: [US, DE, NL]
+    why: "US-first service; EU exits work but some features are US-only, and US exits see more CAPTCHA than EU ones."
+    not_fixed_server_side: [timezone, language, non-residential]
+
+  - name: claude
+    url: https://claude.ai
+    recommended: [US, DE, NL]
+    why: "Available in the US and the EU; same trade-off as ChatGPT."
+    not_fixed_server_side: [timezone, language, non-residential]

@@ -19,6 +19,145 @@ PSIPHON_PINNED_VERSION="v2.0.43"
 PSIPHON_BIN_URL="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
 PSIPHON_SHA_FILE="$PSIPHON_BASE_DIR/psiphon/.core-sha256"
 
+# --- Per-egress sandbox timezone (v2.1) ------------------------------------
+# HONEST LIMIT — read before expecting a score change: this sets the
+# timezone INSIDE the firejail sandbox, for the psiphon process only.
+# IPFighter reads the BROWSER timezone on the user's own machine, so the
+# -15% timezone deduction is NOT fixed by this. It only makes the
+# sandboxed process (its logs, any time-based behaviour) agree with the
+# country its traffic exits from.
+# Usage: egress_timezone <CC>  ->  IANA zone (UTC when unknown).
+
+egress_timezone() {
+    local cc="${1^^}"
+    case "$cc" in
+        CZ) echo "Europe/Prague" ;;
+        DE) echo "Europe/Berlin" ;;
+        NL) echo "Europe/Amsterdam" ;;
+        SE) echo "Europe/Stockholm" ;;
+        US) echo "America/New_York" ;;
+        JP) echo "Asia/Tokyo" ;;
+        SG) echo "Asia/Singapore" ;;
+        CA) echo "America/Toronto" ;;
+        GB) echo "Europe/London" ;;
+        FR) echo "Europe/Paris" ;;
+        IT) echo "Europe/Rome" ;;
+        ES) echo "Europe/Madrid" ;;
+        PL) echo "Europe/Warsaw" ;;
+        NO) echo "Europe/Oslo" ;;
+        FI) echo "Europe/Helsinki" ;;
+        CH) echo "Europe/Zurich" ;;
+        AT) echo "Europe/Vienna" ;;
+        IE) echo "Europe/Dublin" ;;
+        BE) echo "Europe/Brussels" ;;
+        PT) echo "Europe/Lisbon" ;;
+        GR) echo "Europe/Athens" ;;
+        RO) echo "Europe/Bucharest" ;;
+        HU) echo "Europe/Budapest" ;;
+        HR) echo "Europe/Zagreb" ;;
+        SI) echo "Europe/Ljubljana" ;;
+        SK) echo "Europe/Bratislava" ;;
+        LT) echo "Europe/Vilnius" ;;
+        LV) echo "Europe/Riga" ;;
+        EE) echo "Europe/Tallinn" ;;
+        TR) echo "Europe/Istanbul" ;;
+        AE) echo "Asia/Dubai" ;;
+        SA) echo "Asia/Riyadh" ;;
+        IN) echo "Asia/Kolkata" ;;
+        KR) echo "Asia/Seoul" ;;
+        HK) echo "Asia/Hong_Kong" ;;
+        TW) echo "Asia/Taipei" ;;
+        AU) echo "Australia/Sydney" ;;
+        NZ) echo "Pacific/Auckland" ;;
+        BR) echo "America/Sao_Paulo" ;;
+        AR) echo "America/Argentina/Buenos_Aires" ;;
+        CL) echo "America/Santiago" ;;
+        MX) echo "America/Mexico_City" ;;
+        ZA) echo "Africa/Johannesburg" ;;
+        *)  echo "UTC" ;;
+    esac
+}
+
+# _tz_case_arms — the same map as case arms, embedded into the generated
+# start-psiphons.sh so it can pick the zone per folder at runtime.
+# Keep in sync with egress_timezone() above.
+_tz_case_arms() {
+    cat <<'EOF'
+        CZ) tz="Europe/Prague" ;;
+        DE) tz="Europe/Berlin" ;;
+        NL) tz="Europe/Amsterdam" ;;
+        SE) tz="Europe/Stockholm" ;;
+        US) tz="America/New_York" ;;
+        JP) tz="Asia/Tokyo" ;;
+        SG) tz="Asia/Singapore" ;;
+        CA) tz="America/Toronto" ;;
+        GB) tz="Europe/London" ;;
+        FR) tz="Europe/Paris" ;;
+        IT) tz="Europe/Rome" ;;
+        ES) tz="Europe/Madrid" ;;
+        PL) tz="Europe/Warsaw" ;;
+        NO) tz="Europe/Oslo" ;;
+        FI) tz="Europe/Helsinki" ;;
+        CH) tz="Europe/Zurich" ;;
+        AT) tz="Europe/Vienna" ;;
+        IE) tz="Europe/Dublin" ;;
+        BE) tz="Europe/Brussels" ;;
+        PT) tz="Europe/Lisbon" ;;
+        GR) tz="Europe/Athens" ;;
+        RO) tz="Europe/Bucharest" ;;
+        HU) tz="Europe/Budapest" ;;
+        HR) tz="Europe/Zagreb" ;;
+        SI) tz="Europe/Ljubljana" ;;
+        SK) tz="Europe/Bratislava" ;;
+        LT) tz="Europe/Vilnius" ;;
+        LV) tz="Europe/Riga" ;;
+        EE) tz="Europe/Tallinn" ;;
+        TR) tz="Europe/Istanbul" ;;
+        AE) tz="Asia/Dubai" ;;
+        SA) tz="Asia/Riyadh" ;;
+        IN) tz="Asia/Kolkata" ;;
+        KR) tz="Asia/Seoul" ;;
+        HK) tz="Asia/Hong_Kong" ;;
+        TW) tz="Asia/Taipei" ;;
+        AU) tz="Australia/Sydney" ;;
+        NZ) tz="Pacific/Auckland" ;;
+        BR) tz="America/Sao_Paulo" ;;
+        AR) tz="America/Argentina/Buenos_Aires" ;;
+        CL) tz="America/Santiago" ;;
+        MX) tz="America/Mexico_City" ;;
+        ZA) tz="Africa/Johannesburg" ;;
+        *)  tz="UTC" ;;
+EOF
+}
+
+# firejail_tz_flags <CC> — the extra firejail flags for one instance:
+# --env=TZ=<zone> and, when the zoneinfo file exists on the host,
+# --bind=<zoneinfo>:/etc/localtime. Empty when the zone is UTC.
+firejail_tz_flags() {
+    local cc="$1" tz zi
+    tz=$(egress_timezone "$cc")
+    [[ "$tz" == "UTC" ]] && return 0
+    zi="/usr/share/zoneinfo/$tz"
+    if [[ -f "$zi" ]]; then
+        printf '%s' "--env=TZ=$tz --bind=$zi:/etc/localtime"
+    else
+        printf '%s' "--env=TZ=$tz"
+    fi
+}
+
+# firejail_run_prefix — "sudo -u multifon" once the sandbox user is set
+# up (scoped blocks enabled), empty otherwise. The launchers use it so
+# the sandboxed process runs as the uid the owner-match rules match.
+# (SANDBOX_USER / SANDBOX_UID_FILE live in lib/firewall.sh, sourced after
+# this file — the defaults below keep this working even if they are not
+# set yet; at call time they always are.)
+firejail_run_prefix() {
+    local user="${SANDBOX_USER:-multifon}" marker="${SANDBOX_UID_FILE:-$PSIPHON_BASE_DIR/psiphon/.sandbox-uid}"
+    if [[ -f "$marker" ]] && id -u "$user" >/dev/null 2>&1; then
+        printf '%s' "sudo -u $user"
+    fi
+}
+
 # Verify a downloaded core binary. Prints its SHA-256 on success.
 # Returns 1 if the file is empty, not an ELF binary, or unreadable.
 psiphon_verify_binary() {
@@ -178,6 +317,124 @@ install_firejail() {
     sleep 2
 }
 
+# --- Updaters (v2.1 — user-reported missing) --------------------------------
+# update_psiphon_core: download the pinned core (PSIPHON_PINNED_VERSION),
+# verify it, install to /usr/bin, record the SHA-256, then refresh the
+# copy inside EVERY instance folder (folders carry their own copy — the
+# /usr/bin install alone would not update them) and restart the running
+# instances. The pin itself is only bumped in the repo (cores.yaml +
+# lib/psiphon.sh); this updater reports when upstream has a newer release
+# than the pin, but never rewrites the pin on the server.
+update_psiphon_core() {
+    echo -e "${CYAN}Updating Psiphon core to pinned ${PSIPHON_PINNED_VERSION}...${RESET}"
+    local temp_file="/tmp/psiphon-core-update" new_sha old_sha
+    if ! wget -q -O "$temp_file" "$PSIPHON_BIN_URL"; then
+        echo -e "${RED}Download failed (${PSIPHON_BIN_URL}).${RESET}"
+        rm -f "$temp_file"
+        return 1
+    fi
+    new_sha="$(psiphon_verify_binary "$temp_file" || true)"
+    if [[ -z "$new_sha" ]]; then
+        echo -e "${RED}Downloaded file failed verification (empty or not an ELF binary). Refusing to install.${RESET}"
+        rm -f "$temp_file"
+        return 1
+    fi
+    old_sha=""
+    [[ -f "$PSIPHON_SHA_FILE" ]] && old_sha=$(awk '{print $1}' "$PSIPHON_SHA_FILE" 2>/dev/null)
+    if [[ -n "$old_sha" && "$old_sha" != "$new_sha" ]]; then
+        echo -e "${YELLOW}Warning: the new binary hash differs from the hash recorded for ${PSIPHON_PINNED_VERSION}.${RESET}"
+        echo -e "${YELLOW}old: $old_sha${RESET}"
+        echo -e "${YELLOW}new: $new_sha${RESET}"
+        if ! confirm_yes "Install it anyway?"; then
+            echo -e "${YELLOW}Aborted. Binary NOT installed.${RESET}"
+            rm -f "$temp_file"
+            return 1
+        fi
+    fi
+    if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64" 2>/dev/null; then
+        echo -e "${GREEN}/usr/bin copy is already up to date.${RESET}"
+    else
+        sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
+        sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
+        mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+        printf '%s  %s\n' "$new_sha" "$PSIPHON_PINNED_VERSION" > "$PSIPHON_SHA_FILE"
+        echo -e "${GREEN}Installed to /usr/bin. SHA-256 recorded in $PSIPHON_SHA_FILE${RESET}"
+    fi
+    rm -f "$temp_file"
+    # Refresh the per-instance copies and restart what was running.
+    local d bn was_running
+    while IFS= read -r d; do
+        bn=$(basename "$d")
+        was_running=0
+        psiphon_live_pid "$d" >/dev/null 2>&1 && was_running=1
+        sudo cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64" 2>/dev/null || cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64"
+        sudo chmod +x "$d/psiphon-tunnel-core-x86_64"
+        # The folder may belong to the sandbox user — hand it back.
+        if sandbox_user_enabled 2>/dev/null; then
+            sudo chown -R "$SANDBOX_USER:$SANDBOX_USER" "$d" 2>/dev/null || true
+        fi
+        if [[ "$was_running" -eq 1 ]]; then
+            echo -e "${CYAN}Restarting $bn with the new core...${RESET}"
+            stop_psiphon_in_dir "$d"
+            sleep 2
+            _launch_instance_dir "$d"
+        else
+            echo -e "${GREEN}$bn updated (was stopped, left stopped).${RESET}"
+        fi
+    done < <(psiphon_dirs)
+    echo -e "${GREEN}Psiphon core update done.${RESET}"
+}
+
+# update_firejail: apt upgrade of the firejail package only, with the
+# version before/after. (install_firejail above only installs when it is
+# missing entirely.)
+update_firejail() {
+    echo -e "${CYAN}Firejail update...${RESET}"
+    if command -v firejail >/dev/null 2>&1; then
+        echo -e " before: $(firejail --version 2>/dev/null | head -n1)"
+    else
+        echo -e "${YELLOW}Firejail is not installed — installing it now.${RESET}"
+    fi
+    if sudo apt update && sudo apt install -y --only-upgrade firejail; then
+        echo -e " after:  $(firejail --version 2>/dev/null | head -n1)"
+        echo -e "${GREEN}Firejail update done.${RESET}"
+    else
+        echo -e "${RED}apt failed — Firejail was not updated.${RESET}"
+        return 1
+    fi
+    info_write_system
+}
+
+# check_upstream_versions: read-only report — pinned version vs the latest
+# upstream release tag (GitHub API), and the installed firejail version
+# vs the apt candidate. Never changes anything.
+check_upstream_versions() {
+    echo -e "${YELLOW}Upstream versions:${RESET}"
+    echo -e " Psiphon core pinned here: ${PSIPHON_PINNED_VERSION}"
+    local tag=""
+    if command -v curl >/dev/null 2>&1; then
+        tag=$(curl -s --max-time 10 https://api.github.com/repos/Psiphon-Labs/psiphon-tunnel-core/releases/latest \
+              | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' || true)
+    fi
+    if [[ -n "$tag" ]]; then
+        if [[ "$tag" == "$PSIPHON_PINNED_VERSION" ]]; then
+            echo -e " Psiphon core latest upstream: $tag ${GREEN}(pin is current)${RESET}"
+        else
+            echo -e " Psiphon core latest upstream: $tag ${YELLOW}(newer than the pin — bump the pin in the repo, then run the updater)${RESET}"
+        fi
+    else
+        echo -e " Psiphon core latest upstream: ${YELLOW}could not reach the GitHub API${RESET}"
+    fi
+    if command -v firejail >/dev/null 2>&1; then
+        echo -e " Firejail installed: $(firejail --version 2>/dev/null | head -n1)"
+    else
+        echo -e " Firejail installed: ${RED}not installed${RESET}"
+    fi
+    if command -v apt-cache >/dev/null 2>&1; then
+        echo -e " Firejail apt candidate: $(apt-cache policy firejail 2>/dev/null | awk '/Candidate:/ {print $2}')"
+    fi
+}
+
 # Refresh the global used_ports list from registry + existing configs.
 _refresh_used_ports() {
     used_ports=()
@@ -250,16 +507,23 @@ _create_single_location() {
     # so every stop function that reads the pidfile found nothing to kill.
     # The launcher now records $! (the firejail PID) and waits on it, so
     # the script still runs in the foreground like before.
+    # v2.1: the sandbox timezone matches the egress region (see the honest
+    # limit note on egress_timezone — this does NOT fix the browser
+    # timezone IPFighter reads), and the launcher runs firejail as the
+    # sandbox user once the scoped blocks are set up.
+    local tz_flags fj_prefix
+    tz_flags=$(firejail_tz_flags "$cc_upper")
+    fj_prefix=$(firejail_run_prefix)
     printf '#!/bin/bash
 cd %q || exit 1
 if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
 if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
   if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
 fi
-firejail --quiet --noprofile --private=%q --env=HOME=%q ./psiphon-tunnel-core-x86_64 -config ./config.json > log.txt 2>&1 &
+%s firejail --quiet --noprofile --private=%q --env=HOME=%q %s ./psiphon-tunnel-core-x86_64 -config ./config.json > log.txt 2>&1 &
 echo $! > psiphon.firejail.pid
 wait $!
-' "$dir_path" "$dir_path" "$dir_path" "$dir_path" "$dir_path" > "$dir_path/start.sh"
+' "$dir_path" "$dir_path" "$dir_path" "$fj_prefix" "$dir_path" "$dir_path" "$tz_flags" > "$dir_path/start.sh"
     chmod +x "$dir_path/start.sh"
 
     # Save allocation into registry (idempotent per name)
@@ -409,8 +673,15 @@ generate_start_psiphon_script() {
         echo '        chmod +x psiphon-tunnel-core-x86_64'
         echo '    fi'
         echo
+        echo '    # Sandbox timezone follows the egress region (see egress_timezone in lib/psiphon.sh).'
+        echo '    tz="UTC"; cc="${dir^^}"; case "$cc" in'
+        _tz_case_arms
+        echo '    esac'
+        echo '    fj_prefix=""; [ -f "$HOME/psiphon/.sandbox-uid" ] && fj_prefix="sudo -u multifon"'
+        echo '    tz_flags=""; [ "$tz" != "UTC" ] && tz_flags="--env=TZ=$tz"; [ "$tz" != "UTC" ] && [ -f "/usr/share/zoneinfo/$tz" ] && tz_flags="$tz_flags --bind=/usr/share/zoneinfo/$tz:/etc/localtime"'
+        echo
         echo '    # Run inside a private jail bound to this directory (matches the working method we used)'
-        echo '    nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &'
+        echo '    nohup $fj_prefix firejail --noprofile --private="$(pwd)" --env=HOME="$(pwd)" $tz_flags ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &'
         echo '    echo $! > psiphon.firejail.pid'
         echo 'done'
     } > "$script"
@@ -460,15 +731,21 @@ psiphon_dirs() {
 
 # Launch ONE instance folder in the background (firejail sandbox).
 # Used by rotate_ip; bulk start still goes through start-psiphons.sh.
+# v2.1: sandbox timezone follows the egress region, and firejail runs as
+# the sandbox user once the scoped blocks are set up.
 _launch_instance_dir() {
-    local d="$1"
+    local d="$1" cc tz_flags fj_prefix
+    cc="$(basename "$d")"; cc="${cc#psiphon-}"
+    tz_flags=$(firejail_tz_flags "$cc")
+    fj_prefix=$(firejail_run_prefix)
     (
         cd "$d" || exit 1
         if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
             mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
             chmod +x psiphon-tunnel-core-x86_64
         fi
-        nohup firejail --noprofile --private="$(pwd)" ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
+        # shellcheck disable=SC2086
+        nohup $fj_prefix firejail --noprofile --private="$(pwd)" --env=HOME="$(pwd)" $tz_flags ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
         echo $! > psiphon.firejail.pid
     )
 }

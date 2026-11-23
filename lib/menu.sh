@@ -19,8 +19,10 @@ main_menu() {
     echo -e "${BLUE} 5) Doctor & Repair ${YELLOW}(sync registry, fix pidfiles)${RESET}"
     echo -e "${BLUE} 6) Firewall ${YELLOW}(iptables open/block ports)${RESET}"
     echo -e "${BLUE} 7) Cores ${YELLOW}(WARP / Tor / Geph)${RESET}"
-    echo -e "${BLUE} 8) Force DNS ${YELLOW}(leak check, block port 53)${RESET}"
+    echo -e "${BLUE} 8) Force DNS ${YELLOW}(leak check, scoped port-53 + STUN block)${RESET}"
     echo -e "${BLUE} 9) Install 'multifon' command on PATH${RESET}"
+    echo -e "${BLUE} 10) Updates ${YELLOW}(Psiphon core + Firejail)${RESET}"
+    echo -e "${BLUE} 11) Fix ${YELLOW}(run the checklist: health, DNS, rotate dirty IPs)${RESET}"
     echo ""
     echo -e "${BLUE} 0) Exit${RESET}"
 }
@@ -189,14 +191,16 @@ cores_menu() {
         echo -e "${BLUE} 1) Install WARP core (wireproxy, experimental)${RESET}"
         echo -e "${BLUE} 2) Install Tor core (experimental)${RESET}"
         echo -e "${BLUE} 3) Install Geph core (stub — not wired yet)${RESET}"
+        echo -e "${BLUE} 4) Install Arman VPN core (stub — Firefox Account VPN, not wired yet)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-3]: " core_opt
+        read -rp "Select an option [0-4]: " core_opt
         case $core_opt in
             1) core_install_warp; pause ;;
             2) core_install_tor; pause ;;
             3) core_install_geph; pause ;;
+            4) core_install_arman; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -214,8 +218,8 @@ dns_menu() {
         echo -e "${YELLOW}Force DNS:${RESET}"
         echo ""
         echo -e "${BLUE} 1) DNS leak check (all locations)${RESET}"
-        echo -e "${BLUE} 2) Enable port-53 block ${RED}(blocks direct DNS)${RESET}"
-        echo -e "${BLUE} 3) Disable port-53 block${RESET}"
+        echo -e "${BLUE} 2) Enable scoped port-53 + STUN block ${YELLOW}(sandbox user only — Xray keeps working)${RESET}"
+        echo -e "${BLUE} 3) Disable scoped port-53 + STUN block${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
@@ -254,6 +258,31 @@ install_multifon_command() {
     pause
 }
 
+# 10) Updates menu (v2.1 — user-reported missing)
+updates_menu() {
+    while true; do
+        clear
+        logo
+        check_status
+        echo -e "${YELLOW}Updates:${RESET}"
+        echo ""
+        echo -e "${BLUE} 1) Update Psiphon core ${WHITE}(pinned ${PSIPHON_PINNED_VERSION}; refreshes every instance copy)${RESET}"
+        echo -e "${BLUE} 2) Update Firejail ${WHITE}(apt upgrade)${RESET}"
+        echo -e "${BLUE} 3) Check upstream versions ${WHITE}(pinned vs latest — read-only)${RESET}"
+        echo ""
+        echo -e "${BLUE} 0) Back to Main Menu${RESET}"
+        echo ""
+        read -rp "Select an option [0-3]: " upd_opt
+        case $upd_opt in
+            1) update_psiphon_core; pause ;;
+            2) update_firejail; pause ;;
+            3) check_upstream_versions; pause ;;
+            0) return ;;
+            *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
+        esac
+    done
+}
+
 # Main loop
 main_loop() {
     while true; do
@@ -262,7 +291,7 @@ main_loop() {
         check_status
         main_menu
         echo ""
-        read -rp "Select an option [0-9]: " Main
+        read -rp "Select an option [0-11]: " Main
         case $Main in
             1) install_psiphon_menu ;;
             2) install_firejail ;;
@@ -273,6 +302,8 @@ main_loop() {
             7) cores_menu ;;
             8) dns_menu ;;
             9) install_multifon_command ;;
+            10) updates_menu ;;
+            11) multifon_fix; pause ;;
             0) echo -e "${CYAN}Exiting...${RESET}"; exit ;;
             *) echo -e "${RED}Invalid option. Please try again.${RESET}" ;;
         esac
