@@ -1,107 +1,111 @@
-# Multifon - Multi-instance Psiphon Manager
+# Multifon — Multi-instance Psiphon Manager (v2)
 
-> 🔐 Run multiple isolated Psiphon tunnels in parallel with Firejail sandboxing, smart port allocation, and region selection.
+> 🔐 Run multiple isolated Psiphon tunnels in parallel with Firejail sandboxing, smart port allocation, and region selection — now modular, with more cores and a real cleanup/doctor flow.
 
 ---
 
 ## 🧩 About
 
-**Multifon** is a Bash-based manager for [Psiphon](https://github.com/SpherionOS/PsiphonLinux).  
-It allows you to install Psiphon, manage multiple isolated instances, and run them simultaneously in different regions.  
+**Multifon** is a Bash-based manager for [Psiphon](https://github.com/SpherionOS/PsiphonLinux).
+It installs Psiphon, manages multiple isolated instances, and runs them simultaneously in different regions.
 Each instance is sandboxed with **Firejail**, preventing conflicts and ensuring separation of configs and ports.
 
----
-
-## ✨ Features
-
-- 📦 **Install & update Psiphon** (automatic, manual, or latest binary)
-- 🛡 **Firejail integration** for sandboxed execution
-- 🌍 **Multi-region support** with per-country folders (`psiphon-us`, `psiphon-de`, etc.)
-- 🔀 **Smart port management** (avoids collisions across runs)
-- ⚡ **Bulk operations**: start, stop, restart all tunnels
-- 🔁 **Systemd autostart service** (`multifon-psiphon.service`)
-- 🧹 **Cleanup tools** for removing Psiphon instances or Firejail
+v2 keeps the v1 behaviour (same folders, same port registry, same INFO.txt) and adds:
+- a modular layout (`multifon.sh` + `lib/*.sh`)
+- a `doctor` command that repairs registry/INFO/pidfile drift
+- IP rotation and health checks (exit IP, latency, blacklist)
+- iptables port open/block in the menu
+- a cores system (Psiphon, WARP, Tor, Geph — see `cores.yaml`)
+- Force DNS: DNS leaves through the same SOCKS as the traffic
 
 ---
 
 ## 🚀 Installation
 
-Run the script directly:
-
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/h4m1dr/multifon/main/multifon.sh)
-```
-
-Or clone the repository:
 ```bash
 git clone https://github.com/h4m1dr/multifon.git
 cd multifon
 bash multifon.sh
 ```
 
----
-
-📖 Usage
-When you run the script, you will see an interactive menu:
+Or install the `multifon` command on PATH (menu 9), then run it from anywhere:
 
 ```bash
-Main Menu:
- 1) Psiphon Installation Menu
- 2) Install Firejail
- 3) Psiphon Folder Management
- 4) Cleanup Options
- 0) Exit
-
+multifon
 ```
 
 ---
 
-Example Workflows
-Install Psiphon
-Choose option 1 → Automatic Global Installation.
+## 📂 Layout
 
-Install Firejail
-Choose option 2.
+```text
+multifon.sh            thin entrypoint — sources lib/*.sh, starts the menu
+lib/
+  common.sh            colors, logo, pause, status, confirm_yes
+  ports.sh             port registry (.allocated_ports) + allocation
+  info.sh              INFO.txt read/write/validate
+  psiphon.sh           install, folders, start/stop/restart, delete, rotate IP
+  firewall.sh          iptables open/block ports, port-53 leak block
+  doctor.sh            doctor/sync, live-process reconcile, health check
+  cores.sh             core loader (Psiphon / WARP / Tor / Geph)
+  dns.sh               Force DNS: DoH through SOCKS, leak check
+  menu.sh              main menu + submenus + PATH install
+cores.yaml             cores manifest (versions, ports, status)
+docs/PHASES.md          phase list for the work ahead
+```
 
-Create Psiphon folders for regions
-Choose option 3 → Create Psiphon folders (with Firejail)
-Enter region codes like: US,DE,NL
+Each configured instance lives under:
 
-Start all instances
-Option 3 → Start all Psiphon locations
-
-Check status
-Option 3 → Check Psiphon status (all locations)
-
-Enable autostart
-The script automatically sets up a systemd service:
-multifon-psiphon.service
-
----
-
-📂 Folder Structure
-Each configured Psiphon instance is stored under:
-
-~/psiphon/psiphon-<cc>
+```text
+~/psiphon/psiphon-<cc>/
  ├─ config.json
  ├─ psiphon-tunnel-core-x86_64
  ├─ start.sh
  └─ log.txt
-Where <cc> is the 2-letter country code (e.g. us, de, nl).
+```
 
 ---
 
-🛠 Cleanup
-Delete specific or all psiphon-* folders
+## ✨ Features
 
-Remove Firejail
+- 📦 **Install & update Psiphon** (automatic, manual, or latest binary — pinned to library release v2.0.43, SHA-256 recorded locally)
+- 🛡 **Firejail integration** for sandboxed execution
+- 🌍 **Multi-region support** with per-country folders (`psiphon-us`, `psiphon-de`, etc.)
+- 🔀 **Smart port management** (avoids collisions across runs)
+- ⚡ **Bulk operations**: start, stop, restart all tunnels
+- 🩺 **Doctor**: repairs orphan registry/INFO entries and stale pidfiles
+- 🔁 **Rotate IP** per location, **health check** (exit IP, latency, blacklist)
+- 🧱 **Firewall menu**: open/block ports with iptables (nft fallback)
+- 🔒 **Force DNS**: DoH through the same SOCKS, leak check, port-53 block
+- 🔁 **Systemd autostart service** (`multifon-psiphon.service`)
+- 🧹 **Cleanup tools** for removing Psiphon instances or Firejail
 
-Remove Psiphon binaries and configs
+---
 
-📋 Requirements
+## 🧭 Cores
+
+| Core | Status | SOCKS | Notes |
+| --- | --- | --- | --- |
+| Psiphon | ready | 1081–1091 | pinned v2.0.43 |
+| WARP (wireproxy) | experimental | 1091–1095 | no SOCKS5 UDP yet; needs `wgcf` setup |
+| Tor | experimental | 9050 | exits heavily blocked by Google/AI |
+| Geph | stub | 1096–1099 | upstream binary location not confirmed yet |
+
+Full details in `cores.yaml`.
+
+---
+
+## 📋 Phases
+
+What is done and what comes next lives in [docs/PHASES.md](docs/PHASES.md).
+
+---
+
+## 🛠 Requirements
+
 Linux (Debian/Ubuntu recommended)
 
-bash, wget, git
+bash, wget, git, curl
 
 firejail (auto-installable from menu)
 
@@ -109,7 +113,7 @@ systemd (for autostart service)
 
 ---
 
-📜 License
+## 📜 License
 
 This project is open-source under the MIT License.
-Uses Psiphon binaries from SpherionOS/PsiphonLinux.
+Uses Psiphon binaries from SpherionOS/PsiphonLinux and Psiphon-Labs.

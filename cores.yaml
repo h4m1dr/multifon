@@ -1,0 +1,62 @@
+# multifon v2 — cores manifest
+# Every egress core exposes a SOCKS5 port (and an HTTP port where it has
+# one). The menu treats all cores uniformly; adding a core = one block
+# here + one start/stop pair in lib/cores.sh.
+#
+# Status meanings:
+#   ready        — works today, wired into the menu
+#   experimental — installs and mostly works, known limits, needs review
+#   stub         — listed for the plan, not wired yet (installer refuses)
+#
+# The YAML is kept flat on purpose (2-space list items, 4-space fields)
+# so lib/cores.sh can read it with a tiny awk parser, no yq/python.
+
+cores:
+  - name: psiphon
+    type: psiphon
+    binary: psiphon-tunnel-core-x86_64
+    pinned_version: v2.0.43
+    pinned_commit: 66e249d
+    pinned_release_date: 2026-11-17
+    release_source: https://github.com/Psiphon-Labs/psiphon-tunnel-core/releases
+    binary_source: https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/blob/master/linux/psiphon-tunnel-core-x86_64
+    download_url: https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64
+    checksum: none-published-upstream
+    checksum_note: Upstream publishes no checksum or signature file for the Linux console binary. The installer verifies ELF magic + non-empty + records the SHA-256 locally in ~/psiphon/.core-sha256 and refuses a changed hash for the same pinned version without confirmation.
+    socks_port_range: 1081-1091
+    http_port_range: 8081-8091
+    sandbox: firejail --noprofile --private=<instance dir>
+    status: ready
+
+  - name: warp
+    type: wireguard-warp
+    binary: wireproxy
+    binary_source: https://github.com/pufferffish/wireproxy/releases
+    description: Cloudflare WARP over wireproxy (userspace WireGuard, no kernel interface, no root)
+    socks_port_range: 1091-1095
+    http_port_range: 8091-8095
+    sandbox: none (userspace, no interface)
+    status: experimental
+    limits: SOCKS5 UDP is not supported by wireproxy yet (upstream TODO) — TCP and DNS-over-TCP/DoH work, raw UDP does not. Needs a WARP registration (wgcf) to generate wireproxy.conf; see Phase 4.
+
+  - name: tor
+    type: tor
+    binary: tor
+    binary_source: apt (Debian/Ubuntu tor package)
+    description: Tor client, SOCKS5 on 9050 by default
+    socks_port_range: 9050
+    http_port_range: none
+    sandbox: none
+    status: experimental
+    limits: Tor exit IPs are heavily blocked by Google and AI services (CAPTCHA/denied). Use for anonymity, not for a clean IPFighter score. High latency.
+
+  - name: geph
+    type: geph
+    binary: geph4-client
+    binary_source: to-be-confirmed
+    description: Geph circumvention client as a SOCKS5 core
+    socks_port_range: 1096-1099
+    http_port_range: none
+    sandbox: none
+    status: stub
+    limits: Upstream binary location is not confirmed yet. The installer in lib/cores.sh refuses rather than downloading from a guessed URL. Confirm the upstream repo in Phase 4.
