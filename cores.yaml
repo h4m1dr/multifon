@@ -60,3 +60,14 @@ cores:
     sandbox: none
     status: stub
     limits: Upstream binary location is not confirmed yet. The installer in lib/cores.sh refuses rather than downloading from a guessed URL. Confirm the upstream repo in Phase 4.
+
+  - name: arman
+    type: mozilla-vpn
+    binary: arman-vpn-core
+    binary_source: https://github.com/armanlife/arman-vpn-client/releases
+    description: Arman VPN — free, open-source VPN on a Firefox Account; Mozilla servers on Fastly infrastructure; 50 GB/month per account; country choice with ping test; Firefox TLS fingerprint. The "Firefox VPN" core from the Obsidian bug list (#8).
+    socks_port_range: 1110-1119
+    http_port_range: 8110-8119
+    sandbox: none
+    status: stub
+    limits: Needs a Firefox Account (no token or credential belongs in this repo). Headless/server use NOT verified in this patch — the upstream docs read did not pass a safety check, so no install command, proxy port, or CLI is claimed here; verify from the upstream project first, then wire it in Phase 4. 50 GB/month per account is a hard limit (Psiphon has no such cap).

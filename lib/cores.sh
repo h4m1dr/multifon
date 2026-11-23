@@ -125,6 +125,34 @@ core_install_geph() {
     return 1
 }
 
+# --- Arman VPN (stub, Phase 4) ---------------------------------------------
+# Arman VPN is a free, open-source VPN that works with a Firefox Account:
+# traffic goes through Mozilla's servers on Fastly infrastructure,
+# 50 GB/month per Firefox Account, country choice with a ping test, and
+# Firefox's own TLS fingerprint (uTLS). It is the "Firefox VPN" core
+# from the Obsidian bug list (#8).
+# Status is STUB, not experimental, for an honest reason: whether it can
+# run headless on a server (no GUI, no interactive sign-in) and expose
+# its tunnel as a SOCKS port for the menu was NOT verified in this patch
+# — the upstream docs read for it did not pass a safety check, so no
+# install command, proxy port, or CLI is claimed here. The installer
+# refuses until that is verified from the upstream project itself.
+# What wiring it needs (Phase 4): a Firefox Account (no token or
+# credential belongs in this repo), a headless sign-in path, and a
+# SOCKS5 endpoint the menu can treat like the other cores. 50 GB/month
+# per account is a hard limit to plan around (Psiphon has no such cap).
+core_install_arman() {
+    echo -e "${YELLOW}Arman VPN core (stub)${RESET}"
+    echo -e "${CYAN}Free, open-source VPN on a Firefox Account — Mozilla servers${RESET}"
+    echo -e "${CYAN}on Fastly, 50 GB/month per account, country choice with ping test.${RESET}"
+    echo -e "${RED}Not wired yet: headless/server use is unverified — the upstream${RESET}"
+    echo -e "${RED}docs read did not pass a safety check, so nothing about its server${RESET}"
+    echo -e "${RED}install, proxy port or CLI is claimed here. Verify it from the${RESET}"
+    echo -e "${RED}upstream project (github.com/armanlife/arman-vpn-client) first,${RESET}"
+    echo -e "${RED}then wire it in Phase 4. No account or token goes in this repo.${RESET}"
+    return 1
+}
+
 # Dispatch install by core name.
 core_install() {
     local name="$1"
@@ -133,6 +161,7 @@ core_install() {
         warp)    core_install_warp ;;
         tor)     core_install_tor ;;
         geph)    core_install_geph ;;
+        arman)   core_install_arman ;;
         *) echo -e "${RED}Unknown core: $name${RESET}"; return 1 ;;
     esac
 }

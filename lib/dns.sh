@@ -11,9 +11,11 @@
 #
 # This file is the Phase 4 foundation:
 #  - dns_leak_check <socks-port>: proves DoH works through the proxy and
-#    tests whether direct UDP/53 is reachable (the leak path).
-#  - dns_force_enable/disable: the iptables OUTPUT block on port 53
-#    (in lib/firewall.sh) — the enforcement switch.
+#    tests whether direct UDP/53 is reachable from the sandbox user
+#    (the leak path).
+#  - dns_force_enable/disable: the SCOPED iptables rules on port 53 +
+#    STUN (in lib/firewall.sh) — owner-match on the sandbox user only,
+#    so Xray's own DNS keeps working. The v2.0 server-wide block is gone.
 #  - a per-instance DoH query helper + an optional socat forwarder, so a
 #    local DNS listener can be served through one egress.
 # Sourced by multifon.sh; never run directly.
@@ -53,15 +55,32 @@ dns_leak_check() {
         echo -e " ${RED}DoH through the proxy FAILED — DNS for this egress is broken.${RESET}"
     fi
 
-    # Direct UDP/53 probe: a real query to 8.8.8.8. If the port-53 OUTPUT
-    # block is on, the query times out; if it is off, it answers.
+    # Direct-DNS probe: a real query to a resolver that is NOT on the
+    # bootstrap allow-list (208.67.222.222). It must run AS THE SANDBOX
+    # USER when the scoped block is set up — a probe as root would bypass
+    # the owner-match rules entirely and report a false "leak".
     # (A bash /dev/udp open would NOT detect the block — UDP connect
     # succeeds locally even when the packet is dropped — so dig is used.)
     if command -v dig >/dev/null 2>&1; then
-        if timeout 5 dig +short +time=3 +tries=1 @8.8.8.8 example.com >/dev/null 2>&1; then
-            echo -e " ${RED}LEAK PATH OPEN: direct DNS to 8.8.8.8:53 answers. Enable the port-53 block (dns_force_enable).${RESET}"
+        local probe_cmd="dig"
+        if sandbox_user_enabled; then
+            probe_cmd="sudo -u $SANDBOX_USER dig"
+            echo -e " Probing as sandbox user $SANDBOX_USER (the uid the scoped rules match)."
         else
-            echo -e " ${GREEN}Direct DNS to 8.8.8.8:53 does not answer — no plain-DNS leak path.${RESET}"
+            echo -e " ${YELLOW}Sandbox user is not set up yet — probing as the current user (host view, not the sandbox).${RESET}"
+        fi
+        if timeout 5 $probe_cmd +short +time=3 +tries=1 "@$DNS_PROBE_RESOLVER" example.com >/dev/null 2>&1; then
+            echo -e " ${RED}LEAK PATH OPEN: direct DNS to $DNS_PROBE_RESOLVER:53 answers. Enable the scoped port-53 block (dns_force_enable).${RESET}"
+        else
+            echo -e " ${GREEN}Direct DNS to $DNS_PROBE_RESOLVER:53 does not answer — no plain-DNS leak path to arbitrary resolvers.${RESET}"
+        fi
+        # Bootstrap path must still work for the sandbox user.
+        if sandbox_user_enabled; then
+            if timeout 5 sudo -u "$SANDBOX_USER" dig +short +time=3 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1; then
+                echo -e " ${GREEN}Bootstrap DNS still works for $SANDBOX_USER (1.1.1.1 allowed).${RESET}"
+            else
+                echo -e " ${RED}Bootstrap DNS is broken for $SANDBOX_USER — the core cannot resolve its server list. Check the allow-list rules.${RESET}"
+            fi
         fi
     else
         echo -e " ${YELLOW}dig is not installed — direct-DNS probe skipped. Port-53 block status: $(dns_leak_block_status).${RESET}"
@@ -70,6 +89,7 @@ dns_leak_check() {
     local fw
     fw=$(dns_leak_block_status)
     echo -e " Port-53 firewall block: $fw"
+    echo -e " STUN firewall block: $(stun_block_status)"
 }
 
 # Leak check for every running instance.
@@ -85,12 +105,19 @@ dns_leak_check_all() {
     [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
 }
 
-# Enable the Force-DNS enforcement: block direct port 53 (see firewall.sh).
-# Prints a warning first — this also blocks plain dig/nslookup from the shell.
+# Enable the Force-DNS enforcement: the SCOPED port-53 + STUN block
+# (see lib/firewall.sh). v2.1: the rules match ONLY the dedicated
+# sandbox user `multifon`, so Xray keeps working — its DNS (plain
+# 1.1.1.1 / 9.9.9.9 on port 53) runs as root and never matches the
+# owner-match rules, and neither do apt or dig from the shell.
+# The v2.0 server-wide block is gone: enabling once also removes any
+# legacy server-wide rule left over from v2.0.
 dns_force_enable() {
-    echo -e "${YELLOW}This blocks ALL direct outbound DNS (UDP/TCP 53) on the server.${RESET}"
-    echo -e "${YELLOW}System tools that use plain DNS (dig, apt without DoH) will stop working until you disable it.${RESET}"
-    if ! confirm_yes "Enable the port-53 block?"; then
+    echo -e "${YELLOW}Scoped block: only the Psiphon sandboxes (user '$SANDBOX_USER') are affected.${RESET}"
+    echo -e "${YELLOW}Xray / 3x-ui, apt and dig keep working — they run as root, not as '$SANDBOX_USER'.${RESET}"
+    echo -e "${YELLOW}First enable creates the '$SANDBOX_USER' user, hands it the instance folders, and restarts the instances once.${RESET}"
+    scoped_block_preview
+    if ! confirm_yes "Enable the scoped port-53 + STUN block?"; then
         echo "Aborted."; return 1
     fi
     dns_leak_block_enable
@@ -102,6 +129,12 @@ dns_force_disable() {
 
 dns_force_status() {
     echo -e "Port-53 firewall block: $(dns_leak_block_status)"
+    echo -e "STUN firewall block: $(stun_block_status)"
+    if sandbox_user_enabled; then
+        echo -e "Sandbox user: $SANDBOX_USER (uid $(id -u "$SANDBOX_USER")) — instances run as this user"
+    else
+        echo -e "Sandbox user: not set up yet (instances still run as root; enable the block once to set it up)"
+    fi
 }
 
 # Optional local forwarder: serve DNS on 127.0.0.1:<listen-port> and answer
