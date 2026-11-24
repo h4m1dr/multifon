@@ -10,8 +10,8 @@ per-IP reputation, not per-country. Verify the actual exit IP with
 | Deduction | Points | Status in v2.1 | What fixes it |
 | --- | --- | --- | --- |
 | WebRTC leak | −20% | **Partial** | Scoped STUN block (UDP 3478/5349/19302, REJECT) catches traffic that reaches the server. In proxy-only client mode the browser's STUN UDP never reaches the server, so the client still needs TUN mode or Chromium `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`. |
-| DNS leak | −5% | **Mostly fixed** | DoH through the same SOCKS works (`dns_doh_query`); the scoped port-53 block (v2.1, sandbox user only) stops leaks to arbitrary resolvers. The per-egress DoH listener is still Phase 4. |
-| Timezone mismatch | −15% | **NOT fixable server-side** | IPFighter compares the exact IANA zone name of the *browser*. The sandbox TZ set per egress (v2.1) only affects the psiphon process inside its firejail sandbox. The browser/OS timezone must be set to the exit country. |
+| DNS leak | −5% | **Mostly fixed** | DoH through the same SOCKS works (`dns_doh_query`); the scoped port-53 block (v2.3, `multifon` group only) stops leaks to arbitrary resolvers. The per-egress DoH listener is still Phase 4. |
+| Timezone mismatch | −15% | **NOT fixable server-side** | IPFighter compares the exact IANA zone name of the *browser*. The sandbox TZ set per egress (v2.1, now a systemd unit `Environment=TZ` + zoneinfo bind since v2.3) only affects the psiphon process inside its unit. The browser/OS timezone must be set to the exit country. |
 | Non-residential IP | −10% | **NOT fixable** | Psiphon, WARP and Tor exits are datacenter IPs. No server-side trick makes one residential. |
 | IP blacklisted (2/10) | −10% | **Detected, rotation on request** | Health check covers the two lists IPFighter deducts for (zen.spamhaus.org, cb1.abuseat.org). `multifon fix` offers to rotate a listed IP (with confirmation). Fully automatic rotation is still pending (Phase 3). |
 

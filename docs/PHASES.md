@@ -4,20 +4,69 @@ Work ahead, in order. Phase 1–2 ship in this PR (the v2 refactor).
 Phases 3–5 are the plan, not promises — each one lands as its own
 reviewed change on `codr1`.
 
-## Where we are now (2026-11-24, from the menu screenshot)
-- **Installed on the server: v2.0.0** (PR #1 merged to main, merge
-  commit 69a72744). That is the menu in the screenshot: options 1–9.
-  Phases 1 + 2 are installed, Phase 3 mostly installed (rotate + health
-  check live under menu 3 → 7/8/9 and menu 5 → 2; fully automatic
-  rotation and country ranking are still pending).
-- **Not installed yet: v2.1** (PR #2 open, commit 1e8a0302 on `codr1`).
-  That is where the updaters (menu 10), `multifon fix` (menu 11), the
-  scoped port-53 + STUN block, sandbox TZ and the Arman stub live.
-  The screenshot menu has no 10/11 because it is v2.0, not v2.1.
+## Where we are now (2026-11-24)
+- **Installed on the server: v2.2.0** (PR #1 merged 69a72744, PR #2
+  merged 42d87afc, PR #3 merged 82e3066e). Phases 1–2 done, Phase 3
+  mostly done (rotate + health check live under menu 3 → 6/7/8 and
+  menu 5 → 2; fully automatic rotation and country ranking still
+  pending), Phase 4 main parts done (DoH forwarder, per-core health
+  checks, WARP/Tor test procedure), Phase 5 partly done (country set
+  helper + Xray patch doc — the patch itself is still a panel step).
+- **On `codr1`, not installed yet: v2.3** (this change — the systemd
+  migration, see below). After review it becomes PR #4.
 - **Research is done** (2026-11-24, `~/workspace/multifon-research/`):
   DoH forwarder, WARP headless, Tor, Geph, Arman headless, Xray patch,
-  Telegram control plane, Windows client. Its verdicts are folded into
-  Phases 4–5 below.
+  Telegram control plane, Windows client, serverless egress. Its
+  verdicts are folded into Phases 4–5 and Phase before 6 below.
+
+## v2.3 — systemd migration (on `codr1`, on top of v2.2)
+- [x] Firejail removed entirely. Why: `apt install firejail` pulled
+  ~1 GB of Recommends (xpra + the GTK/GL dev stack) for a 1.6 MB
+  sandbox, and Firejail is a setuid-root binary with a long CVE
+  history. What Firejail actually did was per-instance private
+  filesystem (`--private=<dir>`), so Psiphon counted each instance as
+  a separate client and gave separate exit IPs.
+- [x] Per-instance system user + unit replaces it: `multifon-<cc>`
+  (home = the instance dir, mode 700), all users in the shared group
+  `multifon`; one unit `multifon-<cc>.service` per instance
+  (`User=`, `Group=`, `WorkingDirectory=`, `ExecStart=<binary>
+  -config ./config.json`, `Environment=TZ=<zone>` + zoneinfo bind,
+  `ProtectSystem=strict`, `ReadWritePaths=<dir>`, `PrivateTmp=yes`,
+  `NoNewPrivileges=yes`, `Type=simple`, `Restart=on-failure`,
+  `RestartSec=5`, enabled so it autostarts on boot). Unix permissions
+  replace the mount namespace — instances cannot see each other's
+  folders. `lib/systemd.sh`.
+- [x] Lifecycle via `systemctl`: start/stop/restart/status/is-active
+  replace pidfile tracking — the pidfile-desync bug class (bug #5) is
+  dead at the root; there is no pidfile any more. `start-psiphons.sh`
+  and per-instance `start.sh` are gone; `multifon start-all` /
+  `stop-all` / `status` work from the CLI too. Doctor reconciles
+  units now (`doctor_reconcile_unit`), not pidfiles.
+- [x] Scoped port-53 + STUN block switches from `--uid-owner multifon`
+  to `--gid-owner multifon` (one rule set for all instance users;
+  nft `meta skgid`). Enabling once also removes legacy v2.0
+  (server-wide) and v2.1 (uid-owner) rules. The DNS leak probe runs
+  as the first instance user, not root. `lib/firewall.sh`,
+  `lib/dns.sh`.
+- [x] Firejail removal path: menu 2 is the systemd-units entry
+  (re-sync units, show one unit file) and menu 4 → 2 / menu 10 → 2
+  run the one-time removal — stop firejail processes, purge the
+  package, show an `apt autoremove --purge` dry-run first and ask
+  before freeing the ~1 GB. Server step after merge: run menu 2 → 2
+  once (nothing to migrate — all old instances were deleted, clean
+  slate, 0 locations).
+- [x] Menu renumbering: folder submenu lost its "no Firejail" item
+  (old 2) — create is 1, status 2, start 3, stop 4, restart 5,
+  rotate 6, change region 7, health 8, country set 9. Main menu 2 is
+  the systemd-units entry; updates menu lost "Update Firejail".
+- [x] INFO.txt keys changed (same block format): per-location
+  `Unit:` / `User:` / `Sandbox: systemd` replace
+  `StartScript:` / `StartAllScript:` / `Firejail:`; SYSTEM block
+  `Sandbox:` / `Units:` replace `FirejailInstalled:` /
+  `StartAllScript:` / `AutostartService:`. `validate_info_file`
+  prunes the old keys on the next run. `.allocated_ports` format
+  unchanged. `lib/info.sh`, `lib/common.sh` (version 2.3.0).
+- [x] `cores.yaml` psiphon sandbox line updated to the systemd unit.
 
 ## v2.2 — Phase 4/5 main parts (on `codr1`, on top of v2.1)
 - [x] Per-egress DoH forwarder (dnscrypt-proxy): config generator +
@@ -32,7 +81,8 @@ reviewed change on `codr1`.
   `lib/doctor.sh`, menu 5 → 3. Arman reports port status only — its
   SOCKS credentials are needed for a full check.
 - [x] Phase 5: recommended country set helper (`create_recommended_country_set`,
-  menu 3 → 10: DE/NL/SE/SG, skips existing, prints real ports) and
+  menu 3 → 9 (10 in v2.2, before the v2.3 renumbering): DE/NL/SE/SG,
+  skips existing, prints real ports) and
   `docs/XRAY-PATCH.md` (exact JSON + 3x-ui panel steps + TO-CONFIRM list).
 - [x] WARP + Tor test procedure: `docs/TEST-WARP-TOR.md` (exact server
   steps, checks, expected outcomes, verdict rule). WARP/Tor marked
@@ -74,12 +124,14 @@ reviewed change on `codr1`.
 - [x] Doctor/sync command: prune registry + INFO orphans whose folder is
   gone, re-register folders that lost their entry, verify ports.
   `lib/doctor.sh` → `doctor_sync` (menu 5).
-- [x] Pidfile reconciliation: state is read from the LIVE process
-  (`pgrep` + `/proc/<pid>/cwd`, firejail `--private=` fallback), not only
-  from `psiphon.firejail.pid`. Stale pidfiles are removed; missing ones are
-  re-written. Root cause fixed too: v1 never wrote the pidfile anywhere —
-  the generated launchers now record `$!` after launching firejail.
-  `lib/doctor.sh` → `psiphon_live_pid`; `lib/psiphon.sh` → `stop_psiphon_in_dir`.
+- [x] Pidfile reconciliation (v2, superseded in v2.3): state was read
+  from the LIVE process (`pgrep` + `/proc/<pid>/cwd`, firejail
+  `--private=` fallback), not only from `psiphon.firejail.pid`. Root
+  cause found too: v1 never wrote the pidfile anywhere. v2.3 removes
+  the pidfile entirely — systemd tracks the process, so the desync
+  bug class is dead; doctor now reconciles units instead
+  (`doctor_reconcile_unit`, unit MainPID first, cwd match second).
+  `lib/doctor.sh` → `psiphon_live_pid`.
 - [x] One canonical cleanup path: every delete (menu + doctor) goes through
   `delete_one_instance` — stop, registry removal, INFO block removal,
   firewall rule removal, folder wipe. `lib/psiphon.sh`.
@@ -91,8 +143,9 @@ reviewed change on `codr1`.
 ## Phase 2 — Menu / PATH / firewall (this PR)
 - [x] Modular layout: thin `multifon.sh` entrypoint + `lib/*.sh`
   (`common`, `ports`, `info`, `psiphon`, `firewall`, `doctor`, `cores`,
-  `dns`, `menu`). Same folders, same `.allocated_ports` and INFO.txt
-  formats — the existing CZ instance keeps working.
+  `dns`, `menu`; v2.3 adds `systemd` + `fixer`). Same folders, same
+  `.allocated_ports` and INFO.txt block formats — the existing CZ
+  instance keeps working.
 - [x] `multifon` command on PATH: menu 9 symlinks the entrypoint into
   `/usr/local/bin/multifon`, so the menu opens from anywhere.
 - [x] iptables port open/block in the menu (menu 6): rules are tagged
@@ -100,10 +153,10 @@ reviewed change on `codr1`.
   fallback. `lib/firewall.sh`.
 
 ## Phase 3 — IP rotation + health check
-- [x] Rotate IP (menu 3 → 7): restart one instance for a fresh exit IP,
-  show old vs new IP. Change region (menu 3 → 8): delete + recreate.
+- [x] Rotate IP (menu 3 → 6): restart one instance for a fresh exit IP,
+  show old vs new IP. Change region (menu 3 → 7): delete + recreate.
   `lib/psiphon.sh` → `rotate_ip`, `change_region`.
-- [x] Health check (menu 3 → 9, menu 5 → 2): exit IP + latency through the
+- [x] Health check (menu 3 → 8, menu 5 → 2): exit IP + latency through the
   instance's SOCKS port + DNSBL status (zen.spamhaus.org,
   cb1.abuseat.org — the two lists IPFighter deducts for).
   `lib/doctor.sh` → `health_check_all`.
@@ -160,7 +213,8 @@ reviewed change on `codr1`.
 
 ### Remaining problems in Phase 5
 - [x] Psiphon instances for DE / NL / SE / US: the **recommended set
-  helper is wired in v2.2** (menu 3 → 10: DE/NL/SE/SG, skips existing).
+  helper is wired in v2.2** (menu 3 → 9; 10 in v2.2, before the v2.3
+  renumbering: DE/NL/SE/SG, skips existing).
   US is not in the set — add it with menu 3 → 1 when a US egress is
   needed (ChatGPT/Claude). Asian backup: SG.
 - [x] Xray outbounds patch: **documented in v2.2** (`docs/XRAY-PATCH.md`:

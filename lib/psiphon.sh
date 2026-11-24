@@ -1,9 +1,10 @@
 #!/bin/bash
-# multifon v2 — lib/psiphon.sh
+# multifon v2.3 — lib/psiphon.sh
 # Psiphon core: install, folder creation, start/stop/restart/status,
 # delete (canonical cleanup path), rotate IP.
-# Firejail sandboxing is kept exactly as in v1:
-#   firejail --noprofile --private=<instance dir> ./psiphon-tunnel-core-x86_64 -config ./config.json
+# Sandboxing is systemd units (lib/systemd.sh), one unit per instance:
+#   multifon-psiphon-<cc>.service (User=multifon-<cc>, Group=multifon)
+# Firejail is gone in v2.3 — see lib/systemd.sh for why.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_PSIPHON_LOADED:-}" ]] && return 0
@@ -19,9 +20,9 @@ PSIPHON_PINNED_VERSION="v2.0.43"
 PSIPHON_BIN_URL="https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
 PSIPHON_SHA_FILE="$PSIPHON_BASE_DIR/psiphon/.core-sha256"
 
-# --- Per-egress sandbox timezone (v2.1) ------------------------------------
+# --- Per-egress sandbox timezone (v2.1, kept in v2.3) ---------------------
 # HONEST LIMIT — read before expecting a score change: this sets the
-# timezone INSIDE the firejail sandbox, for the psiphon process only.
+# timezone INSIDE the systemd unit, for the psiphon process only.
 # IPFighter reads the BROWSER timezone on the user's own machine, so the
 # -15% timezone deduction is NOT fixed by this. It only makes the
 # sandboxed process (its logs, any time-based behaviour) agree with the
@@ -78,85 +79,6 @@ egress_timezone() {
     esac
 }
 
-# _tz_case_arms — the same map as case arms, embedded into the generated
-# start-psiphons.sh so it can pick the zone per folder at runtime.
-# Keep in sync with egress_timezone() above.
-_tz_case_arms() {
-    cat <<'EOF'
-        CZ) tz="Europe/Prague" ;;
-        DE) tz="Europe/Berlin" ;;
-        NL) tz="Europe/Amsterdam" ;;
-        SE) tz="Europe/Stockholm" ;;
-        US) tz="America/New_York" ;;
-        JP) tz="Asia/Tokyo" ;;
-        SG) tz="Asia/Singapore" ;;
-        CA) tz="America/Toronto" ;;
-        GB) tz="Europe/London" ;;
-        FR) tz="Europe/Paris" ;;
-        IT) tz="Europe/Rome" ;;
-        ES) tz="Europe/Madrid" ;;
-        PL) tz="Europe/Warsaw" ;;
-        NO) tz="Europe/Oslo" ;;
-        FI) tz="Europe/Helsinki" ;;
-        CH) tz="Europe/Zurich" ;;
-        AT) tz="Europe/Vienna" ;;
-        IE) tz="Europe/Dublin" ;;
-        BE) tz="Europe/Brussels" ;;
-        PT) tz="Europe/Lisbon" ;;
-        GR) tz="Europe/Athens" ;;
-        RO) tz="Europe/Bucharest" ;;
-        HU) tz="Europe/Budapest" ;;
-        HR) tz="Europe/Zagreb" ;;
-        SI) tz="Europe/Ljubljana" ;;
-        SK) tz="Europe/Bratislava" ;;
-        LT) tz="Europe/Vilnius" ;;
-        LV) tz="Europe/Riga" ;;
-        EE) tz="Europe/Tallinn" ;;
-        TR) tz="Europe/Istanbul" ;;
-        AE) tz="Asia/Dubai" ;;
-        SA) tz="Asia/Riyadh" ;;
-        IN) tz="Asia/Kolkata" ;;
-        KR) tz="Asia/Seoul" ;;
-        HK) tz="Asia/Hong_Kong" ;;
-        TW) tz="Asia/Taipei" ;;
-        AU) tz="Australia/Sydney" ;;
-        NZ) tz="Pacific/Auckland" ;;
-        BR) tz="America/Sao_Paulo" ;;
-        AR) tz="America/Argentina/Buenos_Aires" ;;
-        CL) tz="America/Santiago" ;;
-        MX) tz="America/Mexico_City" ;;
-        ZA) tz="Africa/Johannesburg" ;;
-        *)  tz="UTC" ;;
-EOF
-}
-
-# firejail_tz_flags <CC> — the extra firejail flags for one instance:
-# --env=TZ=<zone> and, when the zoneinfo file exists on the host,
-# --bind=<zoneinfo>:/etc/localtime. Empty when the zone is UTC.
-firejail_tz_flags() {
-    local cc="$1" tz zi
-    tz=$(egress_timezone "$cc")
-    [[ "$tz" == "UTC" ]] && return 0
-    zi="/usr/share/zoneinfo/$tz"
-    if [[ -f "$zi" ]]; then
-        printf '%s' "--env=TZ=$tz --bind=$zi:/etc/localtime"
-    else
-        printf '%s' "--env=TZ=$tz"
-    fi
-}
-
-# firejail_run_prefix — "sudo -u multifon" once the sandbox user is set
-# up (scoped blocks enabled), empty otherwise. The launchers use it so
-# the sandboxed process runs as the uid the owner-match rules match.
-# (SANDBOX_USER / SANDBOX_UID_FILE live in lib/firewall.sh, sourced after
-# this file — the defaults below keep this working even if they are not
-# set yet; at call time they always are.)
-firejail_run_prefix() {
-    local user="${SANDBOX_USER:-multifon}" marker="${SANDBOX_UID_FILE:-$PSIPHON_BASE_DIR/psiphon/.sandbox-uid}"
-    if [[ -f "$marker" ]] && id -u "$user" >/dev/null 2>&1; then
-        printf '%s' "sudo -u $user"
-    fi
-}
 
 # Verify a downloaded core binary. Prints its SHA-256 on success.
 # Returns 1 if the file is empty, not an ELF binary, or unreadable.
@@ -296,27 +218,6 @@ install_psiphon_menu() {
     done
 }
 
-# 2) Install Firejail
-install_firejail() {
-    echo -e "${CYAN}Checking Firejail installation...${RESET}"
-
-    if command -v firejail &> /dev/null; then
-        echo -e "${GREEN}Firejail is already installed.${RESET}"
-    else
-        echo -e "${YELLOW}Installing Firejail...${RESET}"
-        sudo apt update && sudo apt install -y firejail
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}Firejail installed successfully.${RESET}"
-        else
-            echo -e "${RED}Failed to install Firejail.${RESET}"
-        fi
-    fi
-
-    info_write_system
-    echo -e "${CYAN}Returning to main menu...${RESET}"
-    sleep 2
-}
-
 # --- Updaters (v2.1 — user-reported missing) --------------------------------
 # update_psiphon_core: download the pinned core (PSIPHON_PINNED_VERSION),
 # verify it, install to /usr/bin, record the SHA-256, then refresh the
@@ -369,15 +270,13 @@ update_psiphon_core() {
         psiphon_live_pid "$d" >/dev/null 2>&1 && was_running=1
         sudo cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64" 2>/dev/null || cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64"
         sudo chmod +x "$d/psiphon-tunnel-core-x86_64"
-        # The folder may belong to the sandbox user — hand it back.
-        if sandbox_user_enabled 2>/dev/null; then
-            sudo chown -R "$SANDBOX_USER:$SANDBOX_USER" "$d" 2>/dev/null || true
-        fi
+        # The folder belongs to the per-instance user — hand it back.
+        sudo chown -R "$(systemd_instance_user "$d"):$SANDBOX_GROUP" "$d" 2>/dev/null || true
         if [[ "$was_running" -eq 1 ]]; then
             echo -e "${CYAN}Restarting $bn with the new core...${RESET}"
             stop_psiphon_in_dir "$d"
             sleep 2
-            _launch_instance_dir "$d"
+            systemd_instance_start "$d"
         else
             echo -e "${GREEN}$bn updated (was stopped, left stopped).${RESET}"
         fi
@@ -385,29 +284,9 @@ update_psiphon_core() {
     echo -e "${GREEN}Psiphon core update done.${RESET}"
 }
 
-# update_firejail: apt upgrade of the firejail package only, with the
-# version before/after. (install_firejail above only installs when it is
-# missing entirely.)
-update_firejail() {
-    echo -e "${CYAN}Firejail update...${RESET}"
-    if command -v firejail >/dev/null 2>&1; then
-        echo -e " before: $(firejail --version 2>/dev/null | head -n1)"
-    else
-        echo -e "${YELLOW}Firejail is not installed — installing it now.${RESET}"
-    fi
-    if sudo apt update && sudo apt install -y --only-upgrade firejail; then
-        echo -e " after:  $(firejail --version 2>/dev/null | head -n1)"
-        echo -e "${GREEN}Firejail update done.${RESET}"
-    else
-        echo -e "${RED}apt failed — Firejail was not updated.${RESET}"
-        return 1
-    fi
-    info_write_system
-}
-
 # check_upstream_versions: read-only report — pinned version vs the latest
-# upstream release tag (GitHub API), and the installed firejail version
-# vs the apt candidate. Never changes anything.
+# upstream release tag (GitHub API). Never changes anything.
+# (Firejail was removed in v2.3, so there is no Firejail version to report.)
 check_upstream_versions() {
     echo -e "${YELLOW}Upstream versions:${RESET}"
     echo -e " Psiphon core pinned here: ${PSIPHON_PINNED_VERSION}"
@@ -425,14 +304,7 @@ check_upstream_versions() {
     else
         echo -e " Psiphon core latest upstream: ${YELLOW}could not reach the GitHub API${RESET}"
     fi
-    if command -v firejail >/dev/null 2>&1; then
-        echo -e " Firejail installed: $(firejail --version 2>/dev/null | head -n1)"
-    else
-        echo -e " Firejail installed: ${RED}not installed${RESET}"
-    fi
-    if command -v apt-cache >/dev/null 2>&1; then
-        echo -e " Firejail apt candidate: $(apt-cache policy firejail 2>/dev/null | awk '/Candidate:/ {print $2}')"
-    fi
+    echo -e " Sandbox: systemd units (Firejail was removed in v2.3)"
 }
 
 # Refresh the global used_ports list from registry + existing configs.
@@ -502,29 +374,13 @@ _create_single_location() {
 }
 ' "$http_port" "$socks_port" "$cc_upper" > "$dir_path/config.json"
 
-    # Create per-instance start script (Firejail isolation).
-    # BUG FIX #5 (root cause): v1 never wrote psiphon.firejail.pid anywhere,
-    # so every stop function that reads the pidfile found nothing to kill.
-    # The launcher now records $! (the firejail PID) and waits on it, so
-    # the script still runs in the foreground like before.
-    # v2.1: the sandbox timezone matches the egress region (see the honest
-    # limit note on egress_timezone — this does NOT fix the browser
-    # timezone IPFighter reads), and the launcher runs firejail as the
-    # sandbox user once the scoped blocks are set up.
-    local tz_flags fj_prefix
-    tz_flags=$(firejail_tz_flags "$cc_upper")
-    fj_prefix=$(firejail_run_prefix)
-    printf '#!/bin/bash
-cd %q || exit 1
-if [ ! -f ./config.json ]; then echo "ERROR: config.json missing in %q" >&2; exit 10; fi
-if [ ! -x ./psiphon-tunnel-core-x86_64 ]; then
-  if [ -f ./psiphon-tunnel-core-x86_64 ]; then chmod +x ./psiphon-tunnel-core-x86_64; else echo "ERROR: psiphon-tunnel-core-x86_64 missing in %q" >&2; exit 11; fi
-fi
-%s firejail --quiet --noprofile --private=%q --env=HOME=%q %s ./psiphon-tunnel-core-x86_64 -config ./config.json > log.txt 2>&1 &
-echo $! > psiphon.firejail.pid
-wait $!
-' "$dir_path" "$dir_path" "$dir_path" "$fj_prefix" "$dir_path" "$dir_path" "$tz_flags" > "$dir_path/start.sh"
-    chmod +x "$dir_path/start.sh"
+    # v2.3: no start.sh / pidfile any more. The instance runs as a systemd
+    # unit (multifon-<name>.service, User=multifon-<cc>) — the unit IS the
+    # sandbox: own user + 700 folder (private filesystem, so Psiphon sees
+    # each instance as a separate client), TZ from egress_timezone, and
+    # systemd tracks the process (no pidfile to go stale). Remove a stale
+    # start.sh / pidfile from v2.2 if one is lying around.
+    rm -f "$dir_path/start.sh" "$dir_path/psiphon.firejail.pid"
 
     # Save allocation into registry (idempotent per name)
     port_registry_set_entry "$name" "$http_port" "$socks_port"
@@ -535,6 +391,11 @@ wait $!
     echo -e "${GREEN}✔ Created $name [Country: $cc_upper | HTTP: $http_port | SOCKS: $socks_port]${RESET}"
 
     used_ports+=("$http_port" "$socks_port")
+
+    # Create the systemd unit (user + unit file) and start the instance —
+    # like v2.2, a new instance starts right away.
+    systemd_instance_apply "$dir_path" \
+        || echo -e "${YELLOW}Created $name, but its unit could not be started — check: systemctl status $(systemd_unit_name "$dir_path")${RESET}"
 }
 
 # Creating Psiphon folders (with strict validation for ASCII 2-letter country codes)
@@ -603,17 +464,12 @@ Creating_Psiphon_folders() {
 
    _refresh_used_ports
 
-   # Ensure start script exists (skeleton) before adding locations
-   generate_start_psiphon_script
-
    local cc_upper
    for cc_upper in "${countries[@]}"; do
        _create_single_location "$cc_upper" || true
    done
-
-   # After creating folders, generate runner from INFO and enable autostart
-   generate_start_psiphon_script
-   setup_autostart_service
+   # Units are created + started per instance inside _create_single_location;
+   # there is no start script or oneshot service any more (v2.3).
 }
 
 # Create the recommended country set (Phase 5): DE / NL / SE + SG.
@@ -644,13 +500,11 @@ create_recommended_country_set() {
         echo "Aborted."; return 1
     fi
     _refresh_used_ports
-    generate_start_psiphon_script
     local c
     for c in "${to_create[@]}"; do
         _create_single_location "$c" || true
     done
-    generate_start_psiphon_script
-    setup_autostart_service
+    # (Units start per instance inside _create_single_location.)
     echo ""
     echo -e "${GREEN}Created (actual ports — use these in the Xray patch):${RESET}"
     for c in "${to_create[@]}"; do
@@ -660,141 +514,12 @@ create_recommended_country_set() {
             echo -e "  psiphon-${c,,}: HTTP $http  SOCKS $socks  (EgressRegion $c)"
         fi
     done
-    echo -e "${YELLOW}Start them with menu 3 -> 4 (start all), then put the real ports into docs/XRAY-PATCH.md.${RESET}"
-}
-
-# Generate unified start script based on INFO (UPDATED)
-generate_start_psiphon_script() {
-    local root="$PSIPHON_BASE_DIR/psiphon"
-    mkdir -p "$root"
-    local script="$root/start-psiphons.sh"
-
-    # Build a list of country codes from INFO (Folder: <path>) or fallback to discovery
-    local codes=()
-    if [ -f "$INFO_FILE" ]; then
-        while IFS= read -r line; do
-            f="${line#Folder: }"
-            bn="$(basename "$f")"
-            code="${bn#psiphon-}"
-            [ -n "$code" ] && codes+=("$code")
-        done < <(grep -E '^Folder: ' "$INFO_FILE" 2>/dev/null || true)
-    fi
-    if [ "${#codes[@]}" -eq 0 ]; then
-        while IFS= read -r f; do
-            bn="$(basename "$f")"; code="${bn#psiphon-}"
-            [ -n "$code" ] && codes+=("$code")
-        done < <( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u )
-    fi
-
-    # De-duplicate while preserving order
-    if [ "${#codes[@]}" -gt 0 ]; then
-        local seen=""
-        local unique=()
-        for c in "${codes[@]}"; do
-            case ",$seen," in
-                *",$c,"*) ;;  # already
-                *) unique+=("$c"); seen+="${seen:+,}$c" ;;
-            esac
-        done
-        codes=("${unique[@]}")
-    fi
-
-    # Write the script using echo/printf to avoid heredoc escaping issues in online execution
-    {
-        echo "#!/bin/bash"
-        echo
-        echo "# Start multiple Psiphon instances; each runs in its own folder and Firejail private sandbox"
-        echo -n "for dir in"
-        if [ "${#codes[@]}" -gt 0 ]; then
-            for c in "${codes[@]}"; do
-                echo -n " $c"
-            done
-        fi
-        echo "; do"
-        echo '    echo "Starting Psiphon: $dir"'
-        echo '    cd "$HOME/psiphon/psiphon-$dir" || { echo "Skip: folder not found: $HOME/psiphon/psiphon-$dir"; continue; }'
-        echo
-        echo "    # If the x86_64 executable is missing but 'psiphon-tunnel-core' exists, rename and make it executable"
-        echo '    if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then'
-        echo '        mv psiphon-tunnel-core psiphon-tunnel-core-x86_64'
-        echo '        chmod +x psiphon-tunnel-core-x86_64'
-        echo '    fi'
-        echo
-        echo '    # Sandbox timezone follows the egress region (see egress_timezone in lib/psiphon.sh).'
-        echo '    tz="UTC"; cc="${dir^^}"; case "$cc" in'
-        _tz_case_arms
-        echo '    esac'
-        echo '    fj_prefix=""; [ -f "$HOME/psiphon/.sandbox-uid" ] && fj_prefix="sudo -u multifon"'
-        echo '    tz_flags=""; [ "$tz" != "UTC" ] && tz_flags="--env=TZ=$tz"; [ "$tz" != "UTC" ] && [ -f "/usr/share/zoneinfo/$tz" ] && tz_flags="$tz_flags --bind=/usr/share/zoneinfo/$tz:/etc/localtime"'
-        echo
-        echo '    # Run inside a private jail bound to this directory (matches the working method we used)'
-        echo '    nohup $fj_prefix firejail --noprofile --private="$(pwd)" --env=HOME="$(pwd)" $tz_flags ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &'
-        echo '    echo $! > psiphon.firejail.pid'
-        echo 'done'
-    } > "$script"
-
-    chmod +x "$script"
-    echo -e "${GREEN}Generated:${RESET} $script"
-}
-
-setup_autostart_service() {
-    local root="$PSIPHON_BASE_DIR/psiphon"
-    local script="$root/start-psiphons.sh"
-    local service="/etc/systemd/system/multifon-psiphon.service"
-    local homedir="$HOME"
-
-    if [ ! -f "$script" ]; then
-        echo -e "${RED}Start script not found, skipping autostart setup.${RESET}"
-        return
-    fi
-
-    # Write systemd service using printf (no heredoc)
-    sudo bash -c "printf '%s\n' \
-'[Unit]' \
-'Description=Start multiple Psiphon instances with Firejail' \
-'After=network-online.target' \
-'Wants=network-online.target' \
-'' \
-'[Service]' \
-'Type=oneshot' \
-'User=${USER}' \
-'WorkingDirectory=${homedir}' \
-'ExecStart=/bin/bash ${script}' \
-'RemainAfterExit=yes' \
-'' \
-'[Install]' \
-'WantedBy=multi-user.target' > '${service}'"
-
-    sudo systemctl daemon-reload
-    sudo systemctl enable multifon-psiphon.service
-    sudo systemctl restart multifon-psiphon.service
-    echo -e "${GREEN}Autostart enabled via systemd:${RESET} multifon-psiphon.service"
+    echo -e "${YELLOW}They are already started as systemd units — check with menu 3 -> 2, then put the real ports into docs/XRAY-PATCH.md.${RESET}"
 }
 
 # Psiphon bulk helpers (status/start/stop)
 psiphon_dirs() {
     find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | sort -u
-}
-
-# Launch ONE instance folder in the background (firejail sandbox).
-# Used by rotate_ip; bulk start still goes through start-psiphons.sh.
-# v2.1: sandbox timezone follows the egress region, and firejail runs as
-# the sandbox user once the scoped blocks are set up.
-_launch_instance_dir() {
-    local d="$1" cc tz_flags fj_prefix
-    cc="$(basename "$d")"; cc="${cc#psiphon-}"
-    tz_flags=$(firejail_tz_flags "$cc")
-    fj_prefix=$(firejail_run_prefix)
-    (
-        cd "$d" || exit 1
-        if [ ! -f psiphon-tunnel-core-x86_64 ] && [ -f psiphon-tunnel-core ]; then
-            mv psiphon-tunnel-core psiphon-tunnel-core-x86_64
-            chmod +x psiphon-tunnel-core-x86_64
-        fi
-        # shellcheck disable=SC2086
-        nohup $fj_prefix firejail --noprofile --private="$(pwd)" --env=HOME="$(pwd)" $tz_flags ./psiphon-tunnel-core-x86_64 -config config.json > log.txt 2>&1 &
-        echo $! > psiphon.firejail.pid
-    )
 }
 
 # Print the public exit IP seen through one instance's SOCKS port (or nothing).
@@ -807,70 +532,29 @@ psiphon_exit_ip() {
 }
 
 check_all_psiphon() {
-    echo -e "${YELLOW}Psiphon status (by location):${RESET}"
-    local any=0
-    while IFS= read -r d; do
-        any=1
-        bn=$(basename "$d")
-        # read ports from config
-        read -r hp sp < <(instance_ports "$d")
-        # verify pid + process args (pidfile first, live process second)
-        running=0
-        if [ -f "$d/psiphon.firejail.pid" ]; then
-            pid=$(cat "$d/psiphon.firejail.pid")
-            if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= | grep -q "psiphon-tunnel-core"; then
-                running=1
-            fi
-        fi
-        # fallback: live-process reconciliation (covers stale/missing pidfile)
-        if [ "$running" -ne 1 ]; then
-            if psiphon_live_pid "$d" >/dev/null 2>&1; then
-                running=1
-            fi
-        fi
-        # fallback: check listening ports
-        if [ "$running" -ne 1 ]; then
-            detect=0
-            if [[ "$hp" =~ ^[0-9]+$ ]]; then
-                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$hp\>" && detect=1; fi
-            fi
-            if [[ "$sp" =~ ^[0-9]+$ ]] && [ "$detect" -ne 1 ]; then
-                if command -v ss >/dev/null 2>&1; then ss -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; else netstat -tuln 2>/dev/null | grep -q ":$sp\>" && detect=1; fi
-            fi
-            [ "$detect" -eq 1 ] && running=1
-        fi
-        if [ "$running" -eq 1 ]; then
-            echo -e " ${GREEN}RUNNING${RESET}  $bn  ${WHITE}(HTTP:$hp SOCKS:$sp)${RESET}"
-        else
-            echo -e " ${RED}STOPPED${RESET}  $bn  ${WHITE}(HTTP:$hp SOCKS:$sp)${RESET}"
-        fi
-    done < <(psiphon_dirs)
-    [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
+    systemd_units_status
     pause
 }
 
 start_all_psiphon() {
-    generate_start_psiphon_script
-    bash "$HOME/psiphon/start-psiphons.sh"
+    systemd_start_all
     sleep 1
     check_all_psiphon
 }
 
 start_all_psiphon_quiet() {
-    generate_start_psiphon_script
-    bash "$HOME/psiphon/start-psiphons.sh" >/dev/null 2>&1 || true
+    systemd_start_all >/dev/null 2>&1 || true
 }
 
 stop_all_psiphon_quiet() {
-    while IFS= read -r d; do
-        stop_psiphon_in_dir "$d"
-    done < <(psiphon_dirs)
+    systemd_stop_all
 }
 
 restart_all_psiphon() {
     echo -e "${YELLOW}Restarting all Psiphon locations...${RESET}"
-    stop_all_psiphon_quiet
-    start_all_psiphon_quiet
+    systemd_stop_all
+    sleep 1
+    systemd_start_all
     echo -e "${GREEN}Restart complete.${RESET}"
     pause
 }
@@ -887,12 +571,6 @@ stop_all_psiphon() {
     pause
 }
 
-# Creating Psiphon folders (no Firejail) - under repair
-Creating_Psiphon_folders_no_firejail() {
-    echo -e "${YELLOW}This option is under repair. Please use option 1 (with Firejail) for now.${RESET}"
-    pause
-}
-
 # Show Psiphon instances
 show_running_psiphon() {
     echo -e "${YELLOW}Running Psiphon Instances:${RESET}"
@@ -905,15 +583,15 @@ show_running_psiphon() {
 # 1) pidfile, if it points at a live process; stale pidfile is always removed.
 # 2) live-process fallback (covers manual start/stop and missing pidfile).
 # 3) verify the ports are really free afterwards.
+# Canonical stop for ONE instance folder (v2.3 — systemd).
+# 1) systemctl stop the unit (systemd tracks the process — no pidfile).
+# 2) remove a stale v2.2 pidfile if one is lying around.
+# 3) live-process fallback: kill any leftover core process whose cwd is
+#    this folder (covers a manually started process, same as before).
 stop_psiphon_in_dir() {
     local d="$1" pid=""
-    if [ -f "$d/psiphon.firejail.pid" ]; then
-        pid=$(cat "$d/psiphon.firejail.pid" 2>/dev/null || true)
-        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-            _kill_pid "$pid"
-        fi
-        rm -f "$d/psiphon.firejail.pid"
-    fi
+    systemd_instance_stop "$d"
+    rm -f "$d/psiphon.firejail.pid"
     pid=$(psiphon_live_pid "$d" || true)
     if [[ -n "$pid" ]]; then
         _kill_pid "$pid"
@@ -942,8 +620,9 @@ delete_one_instance() {
     local d="$1" bname
     bname="$(basename "$d")"
 
-    # Stop running firejail instance for this directory
+    # Stop the instance and remove its systemd unit + user
     stop_psiphon_in_dir "$d"
+    systemd_unit_remove "$d" 2>/dev/null || true
 
     # Release allocated ports from persistent registry
     port_registry_del_entry "$bname"
@@ -998,20 +677,13 @@ delete_psiphon_folders() {
         delete_one_instance "$d"
     done
 
-    # Re-generate launcher script without removed instances
-    generate_start_psiphon_script
+    # Units for the deleted folders were removed inside delete_one_instance;
+    # reconcile the rest (orphan units, stale files).
+    systemd_units_sync 2>/dev/null || true
 
     # Validate INFO file and update system overview metrics
     validate_info_file
     info_write_system
-
-    # Reload systemd service to reflect updated launcher script
-    if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl daemon-reload
-        if systemctl is-active --quiet multifon-psiphon.service; then
-            sudo systemctl restart multifon-psiphon.service
-        fi
-    fi
 
     echo -e "${GREEN}Done.${RESET}"; pause
 }
@@ -1027,7 +699,7 @@ rotate_ip() {
     [[ -n "$old_ip" ]] && echo -e " old IP: $old_ip"
     stop_psiphon_in_dir "$d"
     sleep 2
-    _launch_instance_dir "$d"
+    systemd_instance_start "$d"
     echo -e "${CYAN}Waiting for the tunnel to come up...${RESET}"
     sleep 8
     new_ip=$(psiphon_exit_ip "$d" || true)
@@ -1049,8 +721,6 @@ change_region() {
     echo -e "${YELLOW}Moving $(basename "$d") to region $new_cc...${RESET}"
     delete_one_instance "$d"
     _refresh_used_ports
-    generate_start_psiphon_script
     _create_single_location "$new_cc"
-    generate_start_psiphon_script
-    setup_autostart_service
+    # (The new instance starts as its own unit inside _create_single_location.)
 }

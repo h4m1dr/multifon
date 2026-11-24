@@ -11,11 +11,12 @@
 #
 # This file is the Phase 4 foundation:
 #  - dns_leak_check <socks-port>: proves DoH works through the proxy and
-#    tests whether direct UDP/53 is reachable from the sandbox user
+#    tests whether direct UDP/53 is reachable from an instance user
 #    (the leak path).
 #  - dns_force_enable/disable: the SCOPED iptables rules on port 53 +
-#    STUN (in lib/firewall.sh) — owner-match on the sandbox user only,
-#    so Xray's own DNS keeps working. The v2.0 server-wide block is gone.
+#    STUN (in lib/firewall.sh) — owner-match on the `multifon` group
+#    (one user per instance, see lib/systemd.sh), so Xray's own DNS
+#    keeps working. The v2.0 server-wide block is gone.
 #  - a per-instance DoH query helper + a per-egress dnscrypt-proxy
 #    forwarder (Phase 4, wired below), so each core gets a local DNS
 #    listener whose queries leave through that core — never plain UDP/53.
@@ -57,30 +58,31 @@ dns_leak_check() {
     fi
 
     # Direct-DNS probe: a real query to a resolver that is NOT on the
-    # bootstrap allow-list (208.67.222.222). It must run AS THE SANDBOX
+    # bootstrap allow-list (208.67.222.222). It must run AS AN INSTANCE
     # USER when the scoped block is set up — a probe as root would bypass
     # the owner-match rules entirely and report a false "leak".
     # (A bash /dev/udp open would NOT detect the block — UDP connect
     # succeeds locally even when the packet is dropped — so dig is used.)
     if command -v dig >/dev/null 2>&1; then
-        local probe_cmd="dig"
-        if sandbox_user_enabled; then
-            probe_cmd="sudo -u $SANDBOX_USER dig"
-            echo -e " Probing as sandbox user $SANDBOX_USER (the uid the scoped rules match)."
+        local probe_cmd="dig" probe_user=""
+        probe_user=$(systemd_first_instance_user || true)
+        if [[ -n "$probe_user" ]]; then
+            probe_cmd="sudo -u $probe_user dig"
+            echo -e " Probing as instance user $probe_user (group $SANDBOX_GROUP — the gid the scoped rules match)."
         else
-            echo -e " ${YELLOW}Sandbox user is not set up yet — probing as the current user (host view, not the sandbox).${RESET}"
+            echo -e " ${YELLOW}No instance user exists yet (no psiphon-* folder) — probing as the current user (host view, not the sandbox).${RESET}"
         fi
         if timeout 5 $probe_cmd +short +time=3 +tries=1 "@$DNS_PROBE_RESOLVER" example.com >/dev/null 2>&1; then
             echo -e " ${RED}LEAK PATH OPEN: direct DNS to $DNS_PROBE_RESOLVER:53 answers. Enable the scoped port-53 block (dns_force_enable).${RESET}"
         else
             echo -e " ${GREEN}Direct DNS to $DNS_PROBE_RESOLVER:53 does not answer — no plain-DNS leak path to arbitrary resolvers.${RESET}"
         fi
-        # Bootstrap path must still work for the sandbox user.
-        if sandbox_user_enabled; then
-            if timeout 5 sudo -u "$SANDBOX_USER" dig +short +time=3 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1; then
-                echo -e " ${GREEN}Bootstrap DNS still works for $SANDBOX_USER (1.1.1.1 allowed).${RESET}"
+        # Bootstrap path must still work for the instance user.
+        if [[ -n "$probe_user" ]]; then
+            if timeout 5 sudo -u "$probe_user" dig +short +time=3 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1; then
+                echo -e " ${GREEN}Bootstrap DNS still works for $probe_user (1.1.1.1 allowed).${RESET}"
             else
-                echo -e " ${RED}Bootstrap DNS is broken for $SANDBOX_USER — the core cannot resolve its server list. Check the allow-list rules.${RESET}"
+                echo -e " ${RED}Bootstrap DNS is broken for $probe_user — the core cannot resolve its server list. Check the allow-list rules.${RESET}"
             fi
         fi
     else
@@ -107,16 +109,16 @@ dns_leak_check_all() {
 }
 
 # Enable the Force-DNS enforcement: the SCOPED port-53 + STUN block
-# (see lib/firewall.sh). v2.1: the rules match ONLY the dedicated
-# sandbox user `multifon`, so Xray keeps working — its DNS (plain
+# (see lib/firewall.sh). v2.3: the rules match ONLY the `multifon`
+# group (one user per instance), so Xray keeps working — its DNS (plain
 # 1.1.1.1 / 9.9.9.9 on port 53) runs as root and never matches the
 # owner-match rules, and neither do apt or dig from the shell.
-# The v2.0 server-wide block is gone: enabling once also removes any
-# legacy server-wide rule left over from v2.0.
+# Enabling once also removes any legacy server-wide (v2.0) or uid-owner
+# (v2.1) rule left over from an earlier version.
 dns_force_enable() {
-    echo -e "${YELLOW}Scoped block: only the Psiphon sandboxes (user '$SANDBOX_USER') are affected.${RESET}"
-    echo -e "${YELLOW}Xray / 3x-ui, apt and dig keep working — they run as root, not as '$SANDBOX_USER'.${RESET}"
-    echo -e "${YELLOW}First enable creates the '$SANDBOX_USER' user, hands it the instance folders, and restarts the instances once.${RESET}"
+    echo -e "${YELLOW}Scoped block: only the Psiphon sandboxes (group '$SANDBOX_GROUP') are affected.${RESET}"
+    echo -e "${YELLOW}Xray / 3x-ui, apt and dig keep working — they run as root, not as '$SANDBOX_GROUP'.${RESET}"
+    echo -e "${YELLOW}First enable creates the '$SANDBOX_GROUP' group, gives every instance its own user + unit, and restarts the running instances once.${RESET}"
     scoped_block_preview
     if ! confirm_yes "Enable the scoped port-53 + STUN block?"; then
         echo "Aborted."; return 1
@@ -131,10 +133,10 @@ dns_force_disable() {
 dns_force_status() {
     echo -e "Port-53 firewall block: $(dns_leak_block_status)"
     echo -e "STUN firewall block: $(stun_block_status)"
-    if sandbox_user_enabled; then
-        echo -e "Sandbox user: $SANDBOX_USER (uid $(id -u "$SANDBOX_USER")) — instances run as this user"
+    if sandbox_group_enabled; then
+        echo -e "Sandbox group: $SANDBOX_GROUP (gid $(getent group "$SANDBOX_GROUP" | cut -d: -f3)) — one user per instance"
     else
-        echo -e "Sandbox user: not set up yet (instances still run as root; enable the block once to set it up)"
+        echo -e "Sandbox group: not set up yet (instances still run as root; enable the block once to set it up)"
     fi
 }
 
@@ -157,8 +159,8 @@ dns_force_status() {
 # through the SOCKS proxy or goes direct is not verified. Mitigation used
 # here: server_names = ['cloudflare'] (its stamp embeds 1.1.1.1, so no
 # bootstrap lookup is needed at all) AND bootstrap_resolvers are set to
-# 1.1.1.1/8.8.8.8 only — the same IPs the v2.1 scoped port-53 block
-# explicitly allows for the sandbox user. Test on the server:
+# 1.1.1.1/8.8.8.8 only — the same IPs the v2.3 scoped port-53 block
+# explicitly allows for the `multifon` group. Test on the server:
 #   dig @127.0.0.1 -p <listen> example.com
 #   tcpdump -i any udp port 53 and not host 127.0.0.1   # expect: nothing
 # If that test shows a leak, the forwarder moves to Phase before 6.

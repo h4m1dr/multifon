@@ -2,20 +2,30 @@
 # multifon v2 — lib/doctor.sh
 # Doctor / sync + health checks.
 # Fixes bugs #5 and #6: state is reconciled from the LIVE process and the
-# real folders on disk, not from pidfiles and registry files alone.
+# real folders on disk, not from registry files alone. (v2.3: the pidfile
+# is gone — systemd tracks each instance's process, so the pidfile-desync
+# bug class is dead at the root; doctor now reconciles UNITS instead.)
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_DOCTOR_LOADED:-}" ]] && return 0
 _MULTIFON_DOCTOR_LOADED=1
 
 # Print the PID of the live Psiphon process for one instance folder.
-# Matches the core process whose working directory IS the folder, or the
-# firejail parent whose --private= points at it. Prints nothing + returns 1
-# when the instance is not running.
+# 1) the unit's MainPID (systemd tracks the process — the authoritative
+#    answer when the unit is active).
+# 2) the tunnel core itself (its cwd is the instance folder) — covers a
+#    manually started process with no unit.
+# Prints nothing + returns 1 when the instance is not running.
 psiphon_live_pid() {
     local d="$1" pid="" cwd=""
+    if command -v systemctl >/dev/null 2>&1; then
+        pid=$(systemctl show -p MainPID --value "$(systemd_unit_name "$d")" 2>/dev/null || true)
+        if [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$pid" -gt 0 ]] && kill -0 "$pid" 2>/dev/null; then
+            echo "$pid"
+            return 0
+        fi
+    fi
     command -v pgrep >/dev/null 2>&1 || return 1
-    # 1) the tunnel core itself (its cwd is the instance folder)
     for pid in $(pgrep -f "psiphon-tunnel-core" 2>/dev/null || true); do
         cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
         if [[ "$cwd" == "$d" ]]; then
@@ -23,34 +33,37 @@ psiphon_live_pid() {
             return 0
         fi
     done
-    # 2) the firejail parent (its cmdline contains --private=<dir>)
-    for pid in $(pgrep -f "firejail.*--private" 2>/dev/null || true); do
-        if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qF -- "--private=$d"; then
-            echo "$pid"
-            return 0
-        fi
-    done
     return 1
 }
 
-# Reconcile ONE folder's pidfile with reality:
-#  - pidfile exists but the PID is dead  -> remove the stale pidfile
-#  - process is alive but no pidfile    -> write the pidfile
-#  - both agree                          -> nothing to do
-doctor_reconcile_pidfile() {
-    local d="$1" pid="" live=""
+# Reconcile ONE folder's unit with reality (v2.3 — replaces the old
+# pidfile reconcile; the pidfile-desync bug class is gone because
+# systemd tracks the process, but the unit itself can still be missing
+# or stale):
+#  - stale v2.2 pidfile / start.sh lying around -> remove them
+#  - folder exists but the unit is not active  -> (re)create the unit;
+#    if the core is already running outside systemd, stop it first and
+#    start the unit instead, so exactly one process owns the ports
+doctor_reconcile_unit() {
+    local d="$1" live=""
     if [ -f "$d/psiphon.firejail.pid" ]; then
-        pid=$(cat "$d/psiphon.firejail.pid" 2>/dev/null || true)
-        if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
-            echo -e " ${YELLOW}stale pidfile removed:${RESET} $(basename "$d") (was $pid)"
-            rm -f "$d/psiphon.firejail.pid"
-            pid=""
-        fi
+        echo -e " ${YELLOW}stale v2.2 pidfile removed:${RESET} $(basename "$d")"
+        rm -f "$d/psiphon.firejail.pid"
+    fi
+    if [ -f "$d/start.sh" ]; then
+        echo -e " ${YELLOW}stale v2.2 start.sh removed:${RESET} $(basename "$d")"
+        rm -f "$d/start.sh"
     fi
     live=$(psiphon_live_pid "$d" || true)
-    if [[ -n "$live" && ! -f "$d/psiphon.firejail.pid" ]]; then
-        echo "$live" > "$d/psiphon.firejail.pid"
-        echo -e " ${GREEN}pidfile repaired:${RESET} $(basename "$d") (live pid $live)"
+    if ! systemd_unit_is_active "$(systemd_unit_name "$d")" 2>/dev/null; then
+        systemd_unit_ensure "$d" || return 1
+        if [[ -n "$live" ]]; then
+            echo -e " ${YELLOW}core was running outside systemd — stopping it and starting the unit:${RESET} $(basename "$d")"
+            _kill_pid "$live" 2>/dev/null || true
+            systemd_instance_start "$d"
+        else
+            echo -e " ${GREEN}unit (re)created:${RESET} $(basename "$d") (stopped)"
+        fi
     fi
 }
 
@@ -58,10 +71,10 @@ doctor_reconcile_pidfile() {
 #  - registry entries whose folder is gone     -> prune entry + INFO block
 #  - INFO blocks whose folder is gone          -> prune block
 #  - folders with no registry entry            -> re-register from config.json
-#  - stale / missing pidfiles                  -> reconcile from live process
+#  - missing / stale units                     -> reconcile from live process
 #  - ports the registry claims but nobody holds -> report as free again
 doctor_sync() {
-    echo -e "${YELLOW}Doctor: syncing registry + INFO + folders + pidfiles...${RESET}"
+    echo -e "${YELLOW}Doctor: syncing registry + INFO + folders + units...${RESET}"
     local fixed=0
     port_registry_init
 
@@ -103,9 +116,9 @@ doctor_sync() {
         fi
     done < <(psiphon_dirs)
 
-    # 4) reconcile pidfiles + verify ports
+    # 4) reconcile units + verify ports
     while IFS= read -r d; do
-        doctor_reconcile_pidfile "$d"
+        doctor_reconcile_unit "$d"
         read -r http socks < <(instance_ports "$d")
         for p in "$http" "$socks"; do
             [[ "$p" =~ ^[0-9]+$ ]] || continue
@@ -121,7 +134,7 @@ doctor_sync() {
 
     validate_info_file
     info_write_system
-    generate_start_psiphon_script
+    systemd_units_sync 2>/dev/null || true
     if [[ "$fixed" -eq 0 ]]; then
         echo -e "${GREEN}Doctor: everything already in sync.${RESET}"
     else

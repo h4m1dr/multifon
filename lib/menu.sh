@@ -2,6 +2,8 @@
 # multifon v2 — lib/menu.sh
 # Menus + main loop + PATH install (bug #4).
 # Menu numbers 1–4 are the same as v1; 5–9 are the new v2 sections.
+# v2.3: main menu 2 is the systemd-units entry (Firejail is gone); the
+# folder submenu lost its "no Firejail" item (2) and renumbered 3–10 -> 2–9.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_MENU_LOADED:-}" ]] && return 0
@@ -12,16 +14,16 @@ main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
-    echo -e "${BLUE} 2) Install Firejail ${YELLOW}(Approx 5.5 MB)${RESET}"
+    echo -e "${BLUE} 2) Systemd units ${YELLOW}(per-instance units + Firejail removal)${RESET}"
     echo ""
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Cleanup Options${RESET}"
-    echo -e "${BLUE} 5) Doctor & Repair ${YELLOW}(sync registry, fix pidfiles)${RESET}"
+    echo -e "${BLUE} 5) Doctor & Repair ${YELLOW}(sync registry, fix units)${RESET}"
     echo -e "${BLUE} 6) Firewall ${YELLOW}(iptables open/block ports)${RESET}"
     echo -e "${BLUE} 7) Cores ${YELLOW}(WARP / Tor / Geph / Arman — see cores.yaml)${RESET}"
     echo -e "${BLUE} 8) Force DNS ${YELLOW}(leak check, scoped port-53 + STUN block)${RESET}"
     echo -e "${BLUE} 9) Install 'multifon' command on PATH${RESET}"
-    echo -e "${BLUE} 10) Updates ${YELLOW}(Psiphon core + Firejail)${RESET}"
+    echo -e "${BLUE} 10) Updates ${YELLOW}(Psiphon core)${RESET}"
     echo -e "${BLUE} 11) Fix ${YELLOW}(run the checklist: health, DNS, rotate dirty IPs)${RESET}"
     echo ""
     echo -e "${BLUE} 0) Exit${RESET}"
@@ -33,34 +35,32 @@ psiphon_folder_menu() {
         clear
         logo
         check_status
-        echo -e "${YELLOW}Select how you want Psiphon to autostart:${RESET}"
+        echo -e "${YELLOW}Psiphon instances run as systemd units (one user + unit each).${RESET}"
         echo ""
-        echo -e "${BLUE} 1) Create Psiphon folders ${WHITE}(with Firejail)${RESET}"
-        echo -e "${BLUE} 2) Create Psiphon folders ${WHITE}(no Firejail - under repair)${RESET}"
-        echo -e "${BLUE} 3) Check Psiphon status (all locations)${RESET}"
-        echo -e "${BLUE} 4) Start all Psiphon locations${RESET}"
-        echo -e "${BLUE} 5) Stop all Psiphon locations${RESET}"
-        echo -e "${BLUE} 6) Restart all Psiphon locations${RESET}"
-        echo -e "${BLUE} 7) Rotate IP (one location)${RESET}"
-        echo -e "${BLUE} 8) Change region (one location)${RESET}"
-        echo -e "${BLUE} 9) Health check (all locations)${RESET}"
-        echo -e "${BLUE} 10) Create recommended country set ${WHITE}(DE / NL / SE / SG — Phase 5)${RESET}"
+        echo -e "${BLUE} 1) Create Psiphon folders${RESET}"
+        echo -e "${BLUE} 2) Check Psiphon status (all locations)${RESET}"
+        echo -e "${BLUE} 3) Start all Psiphon locations${RESET}"
+        echo -e "${BLUE} 4) Stop all Psiphon locations${RESET}"
+        echo -e "${BLUE} 5) Restart all Psiphon locations${RESET}"
+        echo -e "${BLUE} 6) Rotate IP (one location)${RESET}"
+        echo -e "${BLUE} 7) Change region (one location)${RESET}"
+        echo -e "${BLUE} 8) Health check (all locations)${RESET}"
+        echo -e "${BLUE} 9) Create recommended country set ${WHITE}(DE / NL / SE / SG — Phase 5)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-10]: " psiphon_folder
+        read -rp "Select an option [0-9]: " psiphon_folder
         case $psiphon_folder in
             1) Creating_Psiphon_folders ;;
-            2) Creating_Psiphon_folders_no_firejail ;;
-            3) check_all_psiphon ;;
-            4) start_all_psiphon ;;
-            5) stop_all_psiphon ;;
-            6) restart_all_psiphon ;;
-            7)
+            2) check_all_psiphon ;;
+            3) start_all_psiphon ;;
+            4) stop_all_psiphon ;;
+            5) restart_all_psiphon ;;
+            6)
                 d=$(select_psiphon_dir "Rotate IP for which location?" || true)
                 [[ -n "$d" ]] && { rotate_ip "$d"; pause; }
                 ;;
-            8)
+            7)
                 d=$(select_psiphon_dir "Change region for which location?" || true)
                 if [[ -n "$d" ]]; then
                     read -rp "New country code (2 letters, e.g. DE): " new_cc
@@ -68,8 +68,8 @@ psiphon_folder_menu() {
                     pause
                 fi
                 ;;
-            9) health_check_all; pause ;;
-            10) create_recommended_country_set; pause ;;
+            8) health_check_all; pause ;;
+            9) create_recommended_country_set; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -102,14 +102,14 @@ cleanup_menu() {
         echo -e "${YELLOW}Cleanup Options:${RESET}"
         echo ""
         echo -e "${BLUE} 1) Delete Psiphon Folders (select or ALL)${RESET}"
-        echo -e "${BLUE} 2) Remove Firejail${RESET}"
+        echo -e "${BLUE} 2) Remove Firejail leftovers ${WHITE}(apt purge + autoremove ~1 GB)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
         read -rp "Select an option [0-2]: " clean_option
         case $clean_option in
             1) delete_psiphon_folders ;;
-            2) sudo apt purge -y firejail && echo -e "${GREEN}Firejail removed.${RESET}"; info_write_system; pause ;;
+            2) systemd_remove_firejail; info_write_system; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -124,7 +124,7 @@ doctor_menu() {
         check_status
         echo -e "${YELLOW}Doctor & Repair:${RESET}"
         echo ""
-        echo -e "${BLUE} 1) Sync & repair now ${WHITE}(prune orphans, fix pidfiles, re-register folders)${RESET}"
+        echo -e "${BLUE} 1) Sync & repair now ${WHITE}(prune orphans, fix units, re-register folders)${RESET}"
         echo -e "${BLUE} 2) Health check (exit IP + latency + blacklist)${RESET}"
         echo -e "${BLUE} 3) Health check — all cores ${WHITE}(WARP / Tor / Arman)${RESET}"
         echo ""
@@ -225,7 +225,7 @@ dns_menu() {
         echo -e "${YELLOW}Force DNS:${RESET}"
         echo ""
         echo -e "${BLUE} 1) DNS leak check (all locations)${RESET}"
-        echo -e "${BLUE} 2) Enable scoped port-53 + STUN block ${YELLOW}(sandbox user only — Xray keeps working)${RESET}"
+        echo -e "${BLUE} 2) Enable scoped port-53 + STUN block ${YELLOW}(multifon group only — Xray keeps working)${RESET}"
         echo -e "${BLUE} 3) Disable scoped port-53 + STUN block${RESET}"
         echo -e "${BLUE} 4) Start per-egress DoH forwarders ${WHITE}(all running egresses)${RESET}"
         echo -e "${BLUE} 5) Stop all DoH forwarders${RESET}"
@@ -280,16 +280,14 @@ updates_menu() {
         echo -e "${YELLOW}Updates:${RESET}"
         echo ""
         echo -e "${BLUE} 1) Update Psiphon core ${WHITE}(pinned ${PSIPHON_PINNED_VERSION}; refreshes every instance copy)${RESET}"
-        echo -e "${BLUE} 2) Update Firejail ${WHITE}(apt upgrade)${RESET}"
-        echo -e "${BLUE} 3) Check upstream versions ${WHITE}(pinned vs latest — read-only)${RESET}"
+        echo -e "${BLUE} 2) Check upstream versions ${WHITE}(pinned vs latest — read-only)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-3]: " upd_opt
+        read -rp "Select an option [0-2]: " upd_opt
         case $upd_opt in
             1) update_psiphon_core; pause ;;
-            2) update_firejail; pause ;;
-            3) check_upstream_versions; pause ;;
+            2) check_upstream_versions; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -307,7 +305,7 @@ main_loop() {
         read -rp "Select an option [0-11]: " Main
         case $Main in
             1) install_psiphon_menu ;;
-            2) install_firejail ;;
+            2) systemd_menu ;;
             3) psiphon_folder_menu ;;
             4) cleanup_menu ;;
             5) doctor_menu ;;
