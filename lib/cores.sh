@@ -56,30 +56,34 @@ cores_show_all() {
     echo -e "${CYAN}Every core exposes a SOCKS5 port; the menu and the DNS rules treat them the same.${RESET}"
 }
 
-# --- WARP via wireproxy (experimental, Phase 4) ---------------------------
+# --- WARP via wireproxy (test-only, Phase 4) -------------------------------
 # wireproxy is a userspace WireGuard client that exposes a SOCKS5/HTTP
 # proxy with no kernel interface and no root. Cloudflare WARP runs over it.
 # Known limit (upstream TODO): SOCKS5 UDP is not supported yet, so WARP
 # through wireproxy can carry TCP + DNS-over-TCP/DoH, but not raw UDP.
+# Canonical repo is windtf/wireproxy (transferred home of
+# pufferffish/wireproxy). WARP is marked test-only: hamidr's experience
+# is that it usually does not respond — run docs/TEST-WARP-TOR.md first.
 core_install_warp() {
     echo -e "${YELLOW}WARP core (experimental)${RESET}"
     if command -v wireproxy >/dev/null 2>&1; then
         echo -e "${GREEN}wireproxy is already installed: $(command -v wireproxy)${RESET}"
     else
-        echo -e "${CYAN}wireproxy is fetched from its GitHub releases (pufferffish/wireproxy).${RESET}"
+        echo -e "${CYAN}wireproxy is fetched from its GitHub releases (windtf/wireproxy —${RESET}"
+        echo -e "${CYAN}the transferred home of pufferffish/wireproxy).${RESET}"
         echo -e "${CYAN}The installer discovers the latest linux/amd64 asset — no version is hardcoded here.${RESET}"
         if ! confirm_yes "Download and install wireproxy now?"; then
             echo "Aborted."; return 1
         fi
         local tag asset_url tmp
         tmp=$(mktemp -d)
-        tag=$(curl -s https://api.github.com/repos/pufferffish/wireproxy/releases/latest \
+        tag=$(curl -s https://api.github.com/repos/windtf/wireproxy/releases/latest \
               | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
         if [[ -z "$tag" ]]; then
             echo -e "${RED}Could not read the latest wireproxy release.${RESET}"
             rm -rf "$tmp"; return 1
         fi
-        asset_url=$(curl -s "https://api.github.com/repos/pufferffish/wireproxy/releases/tags/$tag" \
+        asset_url=$(curl -s "https://api.github.com/repos/windtf/wireproxy/releases/tags/$tag" \
               | grep '"browser_download_url"' | grep -i 'linux.*amd64.*\.tar\.gz' | head -n1 \
               | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
         if [[ -z "$asset_url" ]]; then
@@ -94,16 +98,20 @@ core_install_warp() {
         tar -xzf "$tmp/wireproxy.tgz" -C "$tmp"
         sudo install -m 0755 "$tmp/wireproxy" /usr/local/bin/wireproxy
         rm -rf "$tmp"
-        echo -e "${GREEN}wireproxy installed. Next step (Phase 4): register a WARP account with wgcf and generate wireproxy.conf.${RESET}"
+        echo -e "${GREEN}wireproxy installed. Next step: register a WARP account with wgcf and generate wireproxy.conf — see docs/TEST-WARP-TOR.md.${RESET}"
     fi
-    echo -e "${YELLOW}WARP start/stop is a Phase 4 item — wireproxy.conf does not exist yet.${RESET}"
+    echo -e "${YELLOW}WARP is TEST-ONLY (see cores.yaml + docs/TEST-WARP-TOR.md): run the test${RESET}"
+    echo -e "${YELLOW}procedure first — if it fails, WARP moves to Phase before 6 or is dropped.${RESET}"
 }
 
-# --- Tor (experimental, Phase 4) ------------------------------------------
+# --- Tor (test-only, Phase 4) ----------------------------------------------
 core_install_tor() {
-    echo -e "${YELLOW}Tor core (experimental)${RESET}"
+    echo -e "${YELLOW}Tor core (test-only)${RESET}"
     echo -e "${CYAN}Tor exposes a SOCKS5 port (default 9050). Tor exit IPs are heavily${RESET}"
     echo -e "${CYAN}blocked by Google/AI services — use it for anonymity, not for a clean score.${RESET}"
+    echo -e "${CYAN}Ubuntu's tor package lags upstream; the Tor Project's own repo${RESET}"
+    echo -e "${CYAN}(deb.torproject.org) is the newer source, but adding a third-party apt${RESET}"
+    echo -e "${CYAN}source needs hamidr's review first — this installer uses the Ubuntu package.${RESET}"
     if command -v tor >/dev/null 2>&1; then
         echo -e "${GREEN}tor is already installed: $(command -v tor)${RESET}"
     else
@@ -112,7 +120,9 @@ core_install_tor() {
         fi
         sudo apt update && sudo apt install -y tor
     fi
-    echo -e "${YELLOW}Tor start/stop wiring is a Phase 4 item.${RESET}"
+    echo -e "${YELLOW}Tor start/stop: systemctl start/stop tor@default (see docs/TEST-WARP-TOR.md).${RESET}"
+    echo -e "${YELLOW}Tor is TEST-ONLY: run the test procedure first — if Gemini refuses it${RESET}"
+    echo -e "${YELLOW}(the expected outcome), Tor stays a fallback core only.${RESET}"
 }
 
 # --- Geph (stub, Phase 4) --------------------------------------------------
@@ -131,25 +141,32 @@ core_install_geph() {
 # 50 GB/month per Firefox Account, country choice with a ping test, and
 # Firefox's own TLS fingerprint (uTLS). It is the "Firefox VPN" core
 # from the Obsidian bug list (#8).
-# Status is STUB, not experimental, for an honest reason: whether it can
-# run headless on a server (no GUI, no interactive sign-in) and expose
-# its tunnel as a SOCKS port for the menu was NOT verified in this patch
-# — the upstream docs read for it did not pass a safety check, so no
-# install command, proxy port, or CLI is claimed here. The installer
-# refuses until that is verified from the upstream project itself.
-# What wiring it needs (Phase 4): a Firefox Account (no token or
-# credential belongs in this repo), a headless sign-in path, and a
-# SOCKS5 endpoint the menu can treat like the other cores. 50 GB/month
-# per account is a hard limit to plan around (Psiphon has no such cap).
+# Headless/server use was VERIFIED feasible by research (2026-11-24,
+# ~/workspace/multifon-research/05-arman-vpn-headless.md): the Core is
+# the server variant — SOCKS5 (and HTTP proxy) on 127.0.0.1:10810, CLI
+# (arman-vpn-core -add-account / -list-accounts / -data-dir / -plain /
+# -setup-server) + web panel on 10820, multi-account rotation at 95%.
+# It is still a STUB here because two things are unverified before wiring:
+# the exact config.json key for the SOCKS username/password (generated at
+# setup, printed in the log), and whether the proxy/panel ports are
+# configurable (two instances side by side). What wiring needs: a Firefox
+# Account (no token or credential belongs in this repo), a one-time
+# sign-in — try the panel first; if Mozilla's check refuses a non-browser
+# sign-in, sign in on his Windows/Android app ("Sign in with the browser")
+# and move the backup zip to the server via scp — and the SOCKS endpoint
+# above. 50 GB/month per account is a hard limit to plan around
+# (Psiphon has no such cap).
 core_install_arman() {
     echo -e "${YELLOW}Arman VPN core (stub)${RESET}"
     echo -e "${CYAN}Free, open-source VPN on a Firefox Account — Mozilla servers${RESET}"
     echo -e "${CYAN}on Fastly, 50 GB/month per account, country choice with ping test.${RESET}"
-    echo -e "${RED}Not wired yet: headless/server use is unverified — the upstream${RESET}"
-    echo -e "${RED}docs read did not pass a safety check, so nothing about its server${RESET}"
-    echo -e "${RED}install, proxy port or CLI is claimed here. Verify it from the${RESET}"
-    echo -e "${RED}upstream project (github.com/armanlife/arman-vpn-client) first,${RESET}"
-    echo -e "${RED}then wire it in Phase 4. No account or token goes in this repo.${RESET}"
+    echo -e "${CYAN}Headless use IS verified feasible (research 2026-11-24): the server${RESET}"
+    echo -e "${CYAN}variant exposes SOCKS5 on 127.0.0.1:10810 + a web panel on 10820.${RESET}"
+    echo -e "${RED}Not wired yet: the config.json key for the SOCKS credentials and${RESET}"
+    echo -e "${RED}whether the ports are configurable are still unverified, and the${RESET}"
+    echo -e "${RED}one-time sign-in needs hamidr (panel first, or the browser sign-in +${RESET}"
+    echo -e "${RED}backup move via scp). See docs/PHASES.md Phase 4. No account or token${RESET}"
+    echo -e "${RED}goes in this repo.${RESET}"
     return 1
 }
 

@@ -616,6 +616,53 @@ Creating_Psiphon_folders() {
    setup_autostart_service
 }
 
+# Create the recommended country set (Phase 5): DE / NL / SE + SG.
+# Built on the same create path as menu 3 -> 1 (_create_single_location),
+# so ports, registry and INFO handling are identical. Countries that
+# already have a folder are skipped, not recreated. The actual ports
+# allocated are printed at the end — use THOSE in the Xray patch
+# (docs/XRAY-PATCH.md), not the 1082/1083/1084 numbers, which only hold
+# when DE/NL/US are created in that order on top of CZ on 1081.
+create_recommended_country_set() {
+    echo -e "${CYAN}Recommended country set (Phase 5): DE, NL, SE, SG${RESET}"
+    echo -e "${YELLOW}DE/NL/SE are the primary European egresses for Gemini/Qwen/Muse; SG is the Asian backup.${RESET}"
+    local cc to_create=() to_skip=() d http socks
+    for cc in DE NL SE SG; do
+        if [[ -d "$PSIPHON_BASE_DIR/psiphon/psiphon-${cc,,}" ]]; then
+            to_skip+=("$cc")
+        else
+            to_create+=("$cc")
+        fi
+    done
+    [[ ${#to_skip[@]} -gt 0 ]] && echo -e " Already exists (skipped): ${to_skip[*]}"
+    if [[ ${#to_create[@]} -eq 0 ]]; then
+        echo -e "${GREEN}The recommended set already exists — nothing to create.${RESET}"
+        return 0
+    fi
+    echo -e " Will create: ${to_create[*]}"
+    if ! confirm_yes "Create ${#to_create[@]} instance(s)?"; then
+        echo "Aborted."; return 1
+    fi
+    _refresh_used_ports
+    generate_start_psiphon_script
+    local c
+    for c in "${to_create[@]}"; do
+        _create_single_location "$c" || true
+    done
+    generate_start_psiphon_script
+    setup_autostart_service
+    echo ""
+    echo -e "${GREEN}Created (actual ports — use these in the Xray patch):${RESET}"
+    for c in "${to_create[@]}"; do
+        d="$PSIPHON_BASE_DIR/psiphon/psiphon-${c,,}"
+        if [[ -d "$d" ]]; then
+            read -r http socks < <(instance_ports "$d")
+            echo -e "  psiphon-${c,,}: HTTP $http  SOCKS $socks  (EgressRegion $c)"
+        fi
+    done
+    echo -e "${YELLOW}Start them with menu 3 -> 4 (start all), then put the real ports into docs/XRAY-PATCH.md.${RESET}"
+}
+
 # Generate unified start script based on INFO (UPDATED)
 generate_start_psiphon_script() {
     local root="$PSIPHON_BASE_DIR/psiphon"

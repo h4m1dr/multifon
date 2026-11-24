@@ -18,7 +18,7 @@ main_menu() {
     echo -e "${BLUE} 4) Cleanup Options${RESET}"
     echo -e "${BLUE} 5) Doctor & Repair ${YELLOW}(sync registry, fix pidfiles)${RESET}"
     echo -e "${BLUE} 6) Firewall ${YELLOW}(iptables open/block ports)${RESET}"
-    echo -e "${BLUE} 7) Cores ${YELLOW}(WARP / Tor / Geph)${RESET}"
+    echo -e "${BLUE} 7) Cores ${YELLOW}(WARP / Tor / Geph / Arman — see cores.yaml)${RESET}"
     echo -e "${BLUE} 8) Force DNS ${YELLOW}(leak check, scoped port-53 + STUN block)${RESET}"
     echo -e "${BLUE} 9) Install 'multifon' command on PATH${RESET}"
     echo -e "${BLUE} 10) Updates ${YELLOW}(Psiphon core + Firejail)${RESET}"
@@ -44,10 +44,11 @@ psiphon_folder_menu() {
         echo -e "${BLUE} 7) Rotate IP (one location)${RESET}"
         echo -e "${BLUE} 8) Change region (one location)${RESET}"
         echo -e "${BLUE} 9) Health check (all locations)${RESET}"
+        echo -e "${BLUE} 10) Create recommended country set ${WHITE}(DE / NL / SE / SG — Phase 5)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-9]: " psiphon_folder
+        read -rp "Select an option [0-10]: " psiphon_folder
         case $psiphon_folder in
             1) Creating_Psiphon_folders ;;
             2) Creating_Psiphon_folders_no_firejail ;;
@@ -68,6 +69,7 @@ psiphon_folder_menu() {
                 fi
                 ;;
             9) health_check_all; pause ;;
+            10) create_recommended_country_set; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -124,13 +126,15 @@ doctor_menu() {
         echo ""
         echo -e "${BLUE} 1) Sync & repair now ${WHITE}(prune orphans, fix pidfiles, re-register folders)${RESET}"
         echo -e "${BLUE} 2) Health check (exit IP + latency + blacklist)${RESET}"
+        echo -e "${BLUE} 3) Health check — all cores ${WHITE}(WARP / Tor / Arman)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-2]: " doc_opt
+        read -rp "Select an option [0-3]: " doc_opt
         case $doc_opt in
             1) doctor_sync; pause ;;
             2) health_check_all; pause ;;
+            3) health_check_cores_all; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -188,10 +192,10 @@ cores_menu() {
         cores_show_all
         echo -e "${YELLOW}Cores:${RESET}"
         echo ""
-        echo -e "${BLUE} 1) Install WARP core (wireproxy, experimental)${RESET}"
-        echo -e "${BLUE} 2) Install Tor core (experimental)${RESET}"
+        echo -e "${BLUE} 1) Install WARP core (wireproxy, test-only — see docs/TEST-WARP-TOR.md)${RESET}"
+        echo -e "${BLUE} 2) Install Tor core (test-only — see docs/TEST-WARP-TOR.md)${RESET}"
         echo -e "${BLUE} 3) Install Geph core (stub — not wired yet)${RESET}"
-        echo -e "${BLUE} 4) Install Arman VPN core (stub — Firefox Account VPN, not wired yet)${RESET}"
+        echo -e "${BLUE} 4) Install Arman VPN core (stub — headless use verified, needs your sign-in)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
@@ -215,19 +219,28 @@ dns_menu() {
         check_status
         dns_force_status
         echo ""
+        echo -e "${YELLOW}DoH forwarders (per-egress, dnscrypt-proxy):${RESET}"
+        dns_forwarder_status
+        echo ""
         echo -e "${YELLOW}Force DNS:${RESET}"
         echo ""
         echo -e "${BLUE} 1) DNS leak check (all locations)${RESET}"
         echo -e "${BLUE} 2) Enable scoped port-53 + STUN block ${YELLOW}(sandbox user only — Xray keeps working)${RESET}"
         echo -e "${BLUE} 3) Disable scoped port-53 + STUN block${RESET}"
+        echo -e "${BLUE} 4) Start per-egress DoH forwarders ${WHITE}(all running egresses)${RESET}"
+        echo -e "${BLUE} 5) Stop all DoH forwarders${RESET}"
+        echo -e "${BLUE} 6) DoH forwarder status${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-3]: " dns_opt
+        read -rp "Select an option [0-6]: " dns_opt
         case $dns_opt in
             1) dns_leak_check_all; pause ;;
             2) dns_force_enable; pause ;;
             3) dns_force_disable; pause ;;
+            4) dns_forwarder_start_all; pause ;;
+            5) dns_forwarder_stop_all; pause ;;
+            6) dns_forwarder_status; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac

@@ -1,5 +1,5 @@
 #!/bin/bash
-# multifon v2.1 — thin entrypoint.
+# multifon v2.2 — thin entrypoint.
 # All logic lives in lib/*.sh; this file only resolves its own directory,
 # sources the modules, and starts the main menu.
 # Run: ./multifon.sh  — or `multifon` after installing the command (menu 9).

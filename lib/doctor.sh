@@ -130,27 +130,26 @@ doctor_sync() {
 }
 
 # --- Health check (Phase 3) ------------------------------------------------
-# For one instance: exit IP + latency through its SOCKS port, plus DNSBL
-# status of that IP (zen.spamhaus.org and cb1.abuseat.org — the two lists
-# IPFighter deducts for). Prints one summary line per instance.
+# health_check_socks <label> <socks-port> [proxy-user:pass]
+# The shared check for every core: exit IP + latency through the SOCKS
+# port + DNSBL status (zen.spamhaus.org and cb1.abuseat.org — the two
+# lists IPFighter deducts for). Prints one summary line.
+# Used by the Psiphon check below and by the per-core checks (Phase 4).
 
-health_check_instance() {
-    local d="$1" sp ip ms t0
-    read -r _hp sp < <(instance_ports "$d")
+health_check_socks() {
+    local label="$1" sp="$2" creds="${3:-}" ip ms t0
     if ! [[ "$sp" =~ ^[0-9]+$ ]]; then
-        echo -e " ${RED}$(basename "$d"): no SOCKS port in config${RESET}"
-        return 1
-    fi
-    if ! psiphon_live_pid "$d" >/dev/null 2>&1; then
-        echo -e " ${RED}$(basename "$d"): not running${RESET}"
+        echo -e " ${RED}$label: no SOCKS port${RESET}"
         return 1
     fi
     command -v curl >/dev/null 2>&1 || { echo -e " ${RED}curl is required for health checks${RESET}"; return 1; }
+    local curl_args=(-s --max-time 15 --socks5-hostname "127.0.0.1:$sp")
+    [[ -n "$creds" ]] && curl_args+=(--proxy-user "$creds")
     t0=$(date +%s%N)
-    ip=$(curl -s --max-time 15 --socks5-hostname "127.0.0.1:$sp" https://ifconfig.me 2>/dev/null || true)
+    ip=$(curl "${curl_args[@]}" https://ifconfig.me 2>/dev/null || true)
     ms=$(( ( $(date +%s%N) - t0 ) / 1000000 ))
     if [[ -z "$ip" ]]; then
-        echo -e " ${RED}$(basename "$d"): SOCKS $sp answers nothing${RESET}"
+        echo -e " ${RED}$label: SOCKS $sp answers nothing${RESET}"
         return 1
     fi
     # DNSBL: reverse the IP, query the two lists (needs dig or host)
@@ -164,7 +163,25 @@ health_check_instance() {
     else
         bl="unknown (install dnsutils for DNSBL checks)"
     fi
-    echo -e " ${GREEN}$(basename "$d")${RESET}  IP: $ip  latency: ${ms}ms  blacklist: $bl"
+    echo -e " ${GREEN}$label${RESET}  IP: $ip  latency: ${ms}ms  blacklist: $bl"
+}
+
+# For one instance: exit IP + latency through its SOCKS port, plus DNSBL
+# status of that IP (zen.spamhaus.org and cb1.abuseat.org — the two lists
+# IPFighter deducts for). Prints one summary line per instance.
+
+health_check_instance() {
+    local d="$1" sp
+    read -r _hp sp < <(instance_ports "$d")
+    if ! [[ "$sp" =~ ^[0-9]+$ ]]; then
+        echo -e " ${RED}$(basename "$d"): no SOCKS port in config${RESET}"
+        return 1
+    fi
+    if ! psiphon_live_pid "$d" >/dev/null 2>&1; then
+        echo -e " ${RED}$(basename "$d"): not running${RESET}"
+        return 1
+    fi
+    health_check_socks "$(basename "$d")" "$sp"
 }
 
 health_check_all() {
@@ -175,4 +192,40 @@ health_check_all() {
         health_check_instance "$d" || true
     done < <(psiphon_dirs)
     [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
+}
+
+# --- Per-core health checks (Phase 4) ---------------------------------------
+# health_check_core <core-name> — WARP (1091), Tor (9050), Arman (10810).
+# Same one-line format as the Psiphon check. A core whose SOCKS port is
+# not listening is reported as not running, not as a failure.
+# Arman note: its SOCKS port needs the username/password generated at
+# setup (stored in its config.json — the exact key is unverified), so
+# without them the check can only report whether the port is up, not
+# the exit IP. That is reported honestly instead of a fake "no answer".
+
+health_check_core() {
+    local name="$1" sp=""
+    case "$name" in
+        warp)  sp=1091 ;;
+        tor)   sp=9050 ;;
+        arman) sp=10810 ;;
+        *) echo -e "${RED}Unknown core for health check: $name${RESET}"; return 1 ;;
+    esac
+    if ! port_in_use "$sp"; then
+        echo -e " ${YELLOW}$name: not running (nothing on SOCKS $sp)${RESET}"
+        return 1
+    fi
+    if [[ "$name" == "arman" ]]; then
+        echo -e " ${GREEN}arman${RESET}  SOCKS 10810 is listening — full exit-IP check needs the setup username/password (config.json key unverified, see docs/PHASES.md Phase 4)"
+        return 0
+    fi
+    health_check_socks "$name" "$sp"
+}
+
+health_check_cores_all() {
+    echo -e "${YELLOW}Core health check (exit IP + latency + blacklist):${RESET}"
+    local name
+    for name in warp tor arman; do
+        health_check_core "$name" || true
+    done
 }

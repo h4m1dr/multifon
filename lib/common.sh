@@ -6,7 +6,7 @@
 [[ -n "${_MULTIFON_COMMON_LOADED:-}" ]] && return 0
 _MULTIFON_COMMON_LOADED=1
 
-MULTIFON_VERSION="2.1.0"
+MULTIFON_VERSION="2.2.0"
 
 # Colors
 RED='\e[91m'
