@@ -28,7 +28,7 @@ cores:
     checksum_note: Upstream publishes no checksum or signature file for the Linux console binary. The installer verifies ELF magic + non-empty + records the SHA-256 locally in ~/psiphon/.core-sha256 and refuses a changed hash for the same pinned version without confirmation.
     socks_port_range: 1081-1091
     http_port_range: 8081-8091
-    sandbox: firejail --noprofile --private=<instance dir>
+    sandbox: systemd unit multifon-<cc>.service (User=multifon-<cc>, Group=multifon, per-instance 700 dir; v2.3 — Firejail removed)
     status: ready
 
   - name: warp

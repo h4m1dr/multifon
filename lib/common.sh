@@ -6,7 +6,7 @@
 [[ -n "${_MULTIFON_COMMON_LOADED:-}" ]] && return 0
 _MULTIFON_COMMON_LOADED=1
 
-MULTIFON_VERSION="2.2.0"
+MULTIFON_VERSION="2.3.0"
 
 # Colors
 RED='\e[91m'
@@ -21,7 +21,7 @@ RESET='\e[0m'
 
 # Directories (HOME is the Psiphon base, same as v1)
 PSIPHON_BASE_DIR="$HOME"
-FIREJAIL_CONFIG_DIR="/etc/firejail"
+# (v2.3: no FIREJAIL_CONFIG_DIR any more — Firejail is gone.)
 
 # Multi Psiphon logo
 logo() {
@@ -60,13 +60,16 @@ check_status() {
     else
         psi_status="${RED}✗ Not Found${RESET}"
     fi
-    [[ -x "$(command -v firejail)" ]] && fj_status="${GREEN}✓ Installed${RESET}" || fj_status="${RED}✗ Not Found${RESET}"
+    local units_summary=""
+    if command -v systemctl >/dev/null 2>&1; then
+        units_summary=$(systemd_units_summary 2>/dev/null || true)
+    fi
     loc_count=$( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l )
 
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
     echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon)${RESET}"
-    echo -e " - Firejail installed: ${fj_status}"
+    echo -e " - Systemd units: ${CYAN}${units_summary:-not available (no systemctl)}${RESET}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
     echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"

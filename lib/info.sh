@@ -1,7 +1,11 @@
 #!/bin/bash
 # multifon v2 — lib/info.sh
 # INFO.txt registry: one "=== <name> ===" block per instance + a SYSTEM block.
-# Format is unchanged from v1 so existing INFO.txt files keep working.
+# Block format is unchanged from v1 (=== NAME === / key: value lines), but
+# v2.3 changed the KEYS: per-location StartScript/StartAllScript/Firejail
+# are replaced by Unit/User/Sandbox (systemd), and the SYSTEM block's
+# FirejailInstalled/StartAllScript/AutostartService by Sandbox/Units.
+# validate_info_file below prunes the old keys on the next run.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_INFO_LOADED:-}" ]] && return 0
@@ -68,15 +72,17 @@ info_list_blocks() {
 }
 
 # Write/refresh a LOCATION block (one per psiphon-XX folder)
+# v2.3: Unit/User/Sandbox replace the old StartScript/StartAllScript/
+# Firejail keys (no start.sh, no start-psiphons.sh, no Firejail any more).
 info_write() {
   local name="$1" cc="$2" dir="$3" http="$4" socks="$5"
-  local bin start start_all files
+  local bin unit user files
   mkdir -p "$PSIPHON_BASE_DIR/psiphon"
   [ -f "$INFO_FILE" ] || : > "$INFO_FILE"
 
   bin="$dir/psiphon-tunnel-core-x86_64"
-  start="$dir/start.sh"
-  start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
+  unit=$(systemd_unit_name "$dir")
+  user=$(systemd_instance_user "$dir")
   files=$(ls -1 "$dir" 2>/dev/null | sed 's/^/  - /')
 
   {
@@ -85,9 +91,9 @@ info_write() {
     echo "HTTP: $http"
     echo "SOCKS: $socks"
     echo "Binary: $bin"
-    echo "StartScript: $start"
-    echo "StartAllScript: $start_all"
-    echo "Firejail: yes"
+    echo "Unit: $unit"
+    echo "User: $user"
+    echo "Sandbox: systemd"
     echo "Files:"
     [ -n "$files" ] && echo "$files"
     echo "Date: $(date -Is)"
@@ -105,26 +111,19 @@ info_write_system() {
     psi="yes"; psi_path="/usr/bin/psiphon-tunnel-core-x86_64"
   fi
 
-  local fj="no"; command -v firejail >/dev/null 2>&1 && fj="yes"
-  local loc_count start_all autostart
+  local loc_count units
   loc_count=$( find "$HOME/psiphon" -maxdepth 1 -type d -name "psiphon-*" 2>/dev/null | wc -l )
-  start_all="$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
-  autostart="disabled"
+  units=""
   if command -v systemctl >/dev/null 2>&1; then
-    if systemctl is-enabled multifon-psiphon.service >/dev/null 2>&1; then
-      autostart="enabled"
-    elif systemctl is-active multifon-psiphon.service >/dev/null 2>&1; then
-      autostart="active"
-    fi
+    units=$(systemd_units_summary 2>/dev/null || true)
   fi
 
   {
     echo "PsiphonInstalled: $psi"
     echo "PsiphonBinary: $psi_path"
-    echo "FirejailInstalled: $fj"
+    echo "Sandbox: systemd"
     echo "LocationsCount: $loc_count"
-    echo "StartAllScript: $start_all"
-    echo "AutostartService: multifon-psiphon.service ($autostart)"
+    echo "Units: ${units:-none}"
     echo "Date: $(date -Is)"
   } | _safe_replace_block "SYSTEM"
 }
@@ -138,8 +137,8 @@ validate_info_file() {
         # Block markers
         '=== '*" ==="|"=== END "*" ===") echo "$line" >> "$tmp" ;;
         # Common keys (locations + system)
-        Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|StartScript:*|StartAllScript:*|Firejail:*|Date:*) echo "$line" >> "$tmp" ;;
-        PsiphonInstalled:*|PsiphonBinary:*|FirejailInstalled:*|LocationsCount:*|AutostartService:*) echo "$line" >> "$tmp" ;;
+        Folder:*|Egress:*|HTTP:*|SOCKS:*|Binary:*|Unit:*|User:*|Sandbox:*|Date:*) echo "$line" >> "$tmp" ;;
+        PsiphonInstalled:*|PsiphonBinary:*|Sandbox:*|LocationsCount:*|Units:*) echo "$line" >> "$tmp" ;;
         Files:*) echo "$line" >> "$tmp" ;;
         '  - '*) echo "$line" >> "$tmp" ;;
         # Preserve empty lines between blocks

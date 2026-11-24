@@ -20,7 +20,7 @@ xray run -test -c /path/to/config.json   # must print "Configuration OK"
 
 ## 1. Before you start — get the real ports and inbound tags
 
-1. Create the country set first: menu 3 → 10 (recommended set DE/NL/SE/SG)
+1. Create the country set first: menu 3 → 9 (recommended set DE/NL/SE/SG)
    or menu 3 → 1 (any codes). Note the **actual** SOCKS ports it prints —
    use those below, not the numbers in the examples. The examples assume
    CZ is on 1081 and DE/NL/US were created in that order (1082/1083/1084).
@@ -154,7 +154,7 @@ Two different blocks — do not confuse them:
       (validate with `xray run -test`; split into three rules if not).
 - [ ] The exact server-string form for a `tcp://127.0.0.1:53xx` DNS entry
       (validate the same way; object form is the fallback).
-- [ ] The actual SOCKS ports of the created instances (menu 3 → 10 prints
+- [ ] The actual SOCKS ports of the created instances (menu 3 → 9 prints
       them) — the 1082/1083/1084 numbers above are examples, not facts.
 
 ## Sources
