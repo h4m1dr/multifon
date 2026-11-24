@@ -1,4 +1,4 @@
-# Multifon — Multi-instance Psiphon Manager (v2.3)
+# Multifon — Multi-instance Psiphon Manager (v2.3.3)
 
 > 🔐 Run multiple isolated Psiphon tunnels in parallel with systemd-unit sandboxing, smart port allocation, and region selection — now modular, with more cores and a real cleanup/doctor flow.
 
@@ -6,7 +6,7 @@
 
 ## 🧩 About
 
-**Multifon** is a Bash-based manager for [Psiphon](https://github.com/SpherionOS/PsiphonLinux).
+**Multifon** is a Bash-based manager for [Psiphon](https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries) (the official Psiphon-Labs core — the SpherionOS repack turned out to be a broken 90-byte wrapper, see v2.3.1).
 It installs Psiphon, manages multiple isolated instances, and runs them simultaneously in different regions.
 Each instance runs as its own systemd unit (`multifon-<cc>.service`) under its own system user (`multifon-<cc>`, home = the instance folder, mode 700) in the shared group `multifon` — Unix permissions keep instances from seeing each other's folders, and one client still gets one exit IP.
 
@@ -35,6 +35,39 @@ country set helper (menu 3 → 9: DE/NL/SE/SG), the exact Xray patch
 new cores from the serverless research (Cloudflare Workers VLESS as the
 next egress core, VLESS+REALITY / AmneziaWG / Hysteria2 as leg-1
 inbounds).
+
+v2.3.3 (on `codr1`, on top of v2.3.2) fixes the two live-test failures
+that survived v2.3.1, both confirmed with hard evidence on the server:
+(1) the scoped port-53 + STUN block was real but dead — the rules were
+APPENDED (-A) at the end of OUTPUT, AFTER UFW's jumps, and UFW's
+before-output chain ACCEPTs ~everything, so all multifon rules showed
+0 packets / 0 bytes and a dig as multifon-nl still answered. The block
+is now INSERTED at the very top of OUTPUT (position 1, before the UFW
+jumps), bootstrap ACCEPTs first, then the REJECTs; enabling runs a
+counter-based self-test (REJECT counters before/after a dig as the
+instance user) and says plainly if the block is not catching traffic
+instead of printing "block on"; a oneshot unit
+(`multifon-firewall.service`, + `multifon reapply-block`) re-applies
+the rules at boot, because a reboot or `ufw reload` wipes OUTPUT; and
+doctor sync re-applies them when they are gone or sitting below UFW.
+The leak probe now runs dig with the unit's gid too (`sudo -u <user>
+-g multifon`) and never says "enable the block" when the block is
+already on. (2) the DoH forwarder exited instantly because the
+generated toml used `bootstrap_resolvers`, which is NOT a valid key in
+dnscrypt-proxy 2.0.45 (FATAL) — the correct key is
+`fallback_resolvers`, verified against the upstream 2.0.45 example
+config and the real binary; the server now comes from a `[static]`
+stamp copied verbatim from the upstream public-resolvers list, so no
+`[sources]` download is needed at startup (that download goes through
+the SOCKS proxy and FATALs when the egress is down). Forwarder start
+validates the toml with `dnscrypt-proxy -check` and prints the real
+error + last log lines instead of "check the config", and "No running
+egresses" is only printed when genuinely nothing is running (running /
+started / failed are counted separately). Also: health check measures
+each egress with 3 spaced samples (~2s apart, never back-to-back or
+parallel) to Google's generate_204 endpoint and reports median latency
++ jitter, ranks egresses by median then jitter, and says which one is
+best now; and the menu header now says "Source: Psiphon-Labs".
 
 v2.3.1 (on `codr1`, on top of v2.3) fixes the live-test failures of v2.3:
 the SpherionOS install turned out to be a broken 90-byte wrapper, and the
@@ -209,4 +242,4 @@ systemd (one unit per instance; units are enabled, so they autostart on boot)
 ## 📜 License
 
 This project is open-source under the MIT License.
-Uses Psiphon binaries from SpherionOS/PsiphonLinux and Psiphon-Labs.
+Uses the official Psiphon binaries from Psiphon-Labs (psiphon-tunnel-core-binaries, pinned v2.0.43).

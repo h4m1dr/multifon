@@ -6,7 +6,7 @@
 [[ -n "${_MULTIFON_COMMON_LOADED:-}" ]] && return 0
 _MULTIFON_COMMON_LOADED=1
 
-MULTIFON_VERSION="2.3.1"
+MULTIFON_VERSION="2.3.3"
 
 # Colors
 RED='\e[91m'
@@ -32,7 +32,7 @@ logo() {
     echo -e "             ██╔████╔██║██║   ██║██║     ██║   ██║ █████╗  ██║   ██║██╔██╗ ██║"
     echo -e "             ██║ ╚═╝ ██║╚██████╔╝███████╗██║   ██║ ██║     ╚██████╔╝██║ ╚████║"
     echo -e "             ╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝   ╚═╝ ╚═╝      ╚═════╝ ╚═╝  ╚═══╝"
-    echo -e "                    ${WHITE}Multi Psiphon Manager v${MULTIFON_VERSION}${RESET}${CYAN}  | ${WHITE}Source: Psiphon SpherionOS ${RESET}"
+    echo -e "                    ${WHITE}Multi Psiphon Manager v${MULTIFON_VERSION}${RESET}${CYAN}  | ${WHITE}Source: Psiphon-Labs ${RESET}"
     echo ""
 }
 
