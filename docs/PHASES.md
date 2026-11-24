@@ -5,19 +5,113 @@ Phases 3–5 are the plan, not promises — each one lands as its own
 reviewed change on `codr1`.
 
 ## Where we are now (2026-11-24)
-- **Installed on the server: v2.2.0** (PR #1 merged 69a72744, PR #2
-  merged 42d87afc, PR #3 merged 82e3066e). Phases 1–2 done, Phase 3
+- **Installed on the server: v2.3.2** (PR #1 merged 69a72744, PR #2
+  merged 42d87afc, PR #3 merged 82e3066e, PR #4 merged 6eae64dc, PR #5
+  merged ebfe29d, PR #6 merged 7e7d34c). Phases 1–2 done, Phase 3
   mostly done (rotate + health check live under menu 3 → 6/7/8 and
-  menu 5 → 2; fully automatic rotation and country ranking still
-  pending), Phase 4 main parts done (DoH forwarder, per-core health
-  checks, WARP/Tor test procedure), Phase 5 partly done (country set
-  helper + Xray patch doc — the patch itself is still a panel step).
-- **On `codr1`, not installed yet: v2.3** (this change — the systemd
-  migration, see below). After review it becomes PR #4.
+  menu 5 → 2; fully automatic rotation still pending — country
+  ranking is now in the health check, see v2.3.3), Phase 4 main parts
+  done (DoH forwarder, per-core health checks, WARP/Tor test
+  procedure), Phase 5 partly done (country set helper + Xray patch
+  doc — the patch itself is still a panel step).
+- **On `codr1`, not installed yet: v2.3.3** (this change — the UFW
+  placement fix + dnscrypt-proxy toml fix + median/jitter health
+  check, see below). After review it becomes PR #7.
+- **Full reinstall is still ON HOLD until v2.3.3 lands** (the two bugs
+  below are in the v2.3.2 code on the server; reinstalling now would
+  not fix them). After the merge: pull -> `multifon nuke` (menu 4 ->
+  2) -> `rm -rf ~/multifon` -> fresh `git clone` main ->
+  `bash multifon/multifon.sh install` -> recreate the SAME country
+  set as before (NL/SE/SG) -> start-all -> verify egress IPs +
+  re-enable the scoped firewall block (Force DNS -> 2).
 - **Research is done** (2026-11-24, `~/workspace/multifon-research/`):
   DoH forwarder, WARP headless, Tor, Geph, Arman headless, Xray patch,
   Telegram control plane, Windows client, serverless egress. Its
   verdicts are folded into Phases 4–5 and Phase before 6 below.
+
+## v2.3.3 — UFW placement + dnscrypt-proxy toml (on `codr1`, on top of v2.3.2)
+Root causes, both confirmed live 2026-11-24 ~05:37–05:40 Tehran (not
+guessed): (1) UFW. Full `iptables -S OUTPUT` + counters: rules 1–6 are
+UFW jumps, rules 7–15 the multifon rules; 63M packets through
+ufw-before-output, only 474K reach past it — UFW's before-output chain
+ACCEPTs all outbound traffic first. ALL multifon rules show 0 packets
+/ 0 bytes; the REJECT counters stayed 0 after a dig as multifon-nl.
+`id multifon-nl` = uid 999, gid 987 (multifon) — the primary gid IS
+987, so the gid theory is dead; the rules were correct, the placement
+was wrong. (2) dnscrypt-proxy toml. `dnscrypt-proxy -check` on the
+generated toml: `[FATAL] Unsupported key in configuration file:
+[bootstrap_resolvers]` (2.0.45) — that FATAL is why all three
+forwarders exited instantly.
+- [x] Firewall rules INSERTED at the very top of OUTPUT (`-I OUTPUT
+  1..9`, never `-A`), preserving internal order (bootstrap ACCEPTs
+  first, then the REJECTs). Enable deletes any existing scoped rules
+  first, or a v2.3.1 install would leave its appended (dead) copies in
+  place — the insert skips rules that already exist anywhere. Disable
+  deletes by exact spec, which works regardless of position. Status
+  warns when the rules sit below the UFW jumps instead of reporting
+  "blocked" (the v2.3.1 status lied: rules present + counters 0).
+  Same placement fix covers the STUN rule.
+- [x] Counter-based self-test after enabling (`dns_leak_block_selftest`):
+  reads the DNS REJECT counters, runs one dig as the first instance
+  user with the unit's gid, re-reads — if the counter did not move, it
+  REPORTS the block is not catching traffic instead of printing "block
+  on". Inconclusive case (no answer, counter unmoved) is reported as
+  inconclusive, not as success.
+- [x] Durability: a reboot or `ufw reload` wipes OUTPUT, so enabling
+  installs a oneshot unit (`multifon-firewall.service`,
+  `multifon reapply-block`) that re-applies the block at boot;
+  disabling / nuke removes it. `doctor_sync` re-applies the rules
+  when the oneshot unit exists but the rules are gone, or when they
+  sit below the UFW jumps (and re-installs the oneshot unit too).
+- [x] Leak probe runs dig with the unit's gid (`sudo -u <user> -g
+  multifon`), so it models the sandboxed process, not the login
+  primary gid. The message never says "enable the block" when the
+  block is already on: if the probe answers while the status says
+  blocked, it says the rules exist but are NOT catching the traffic
+  and points at rule order + re-enable.
+- [x] dnscrypt-proxy toml fixed for 2.0.45, verified against the
+  upstream example config AND the real 2.0.45 binary (downloaded to
+  /tmp, `-check` passes, process stays up and listens on 5353):
+  `bootstrap_resolvers` -> `fallback_resolvers` (the correct 2.0.45
+  key, upstream example line 228); `server_names = ['cloudflare']`
+  now comes from a `[static]` section with the stamp copied VERBATIM
+  from DNSCrypt/dnscrypt-resolvers v3 public-resolvers.md (1.0.0.1) —
+  a hand-written stamp was tried first and FATALed ("Invalid stamp").
+  No `[sources]` section on purpose: with sources, dnscrypt-proxy
+  DOWNLOADS the resolver list at startup through the configured SOCKS
+  proxy and FATALs when the egress is down (verified live).
+- [x] Forwarder start validates the toml with `dnscrypt-proxy -check`
+  before starting and prints the real error; if the process still
+  exits, it prints the last log lines from
+  `~/.dns/dnscrypt-proxy-<name>.log` instead of "check the config".
+  `dns_forwarder_start_all` counts running / started / failed
+  separately and prints "No running egresses" ONLY when genuinely
+  nothing is running — never while units are active.
+- [x] Health check (user request 2026-11-24 ~05:42 Tehran — single
+  back-to-back samples lie: first 300ms, the other two 600-700ms):
+  each egress measured with N=3 samples, ~2s apart, never parallel,
+  plus a 1s pause between egresses, to Google's generate_204 endpoint
+  (same Google edge infra as Gemini, the service he actually uses —
+  not an arbitrary host, and not changed to flatter the numbers).
+  Reports median latency + jitter (max-min) per egress, ranks by
+  median then jitter, and says which egress is best now. Blacklist
+  check unchanged.
+- [x] Menu header "Source: Psiphon SpherionOS" -> "Source:
+  Psiphon-Labs" (the SpherionOS installer label in menu 1 is left
+  alone — that menu really is the old installer).
+- [ ] Server step after merge: pull v2.3.3, re-enable the scoped block
+  once (menu 8 -> 2 — this moves the rules to the top + installs the
+  boot unit + runs the self-test), then `multifon fix` and the
+  IPFighter test. Then the full reinstall above.
+- [ ] Diagnosis commands for the server (after the patch): `sudo
+  iptables -L OUTPUT -n -v --line-numbers` (multifon rules must be
+  1–9, ABOVE the ufw-* jumps; REJECT counters must move after a dig),
+  `sudo -u multifon-nl dig @208.67.222.222 example.com +time=3
+  +tries=1` (must NOT answer), `cat
+  /root/psiphon/.dns/dnscrypt-proxy-psiphon-nl.toml`,
+  `dnscrypt-proxy -check -config
+  /root/psiphon/.dns/dnscrypt-proxy-psiphon-nl.toml` (must pass),
+  `systemctl status multifon-firewall.service`.
 
 ## v2.3.1 — live-test bugfix (on `codr1`, on top of v2.3)
 Root cause, confirmed live 2026-11-24 ~04:59 Tehran: the SpherionOS

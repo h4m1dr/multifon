@@ -151,6 +151,22 @@ doctor_sync() {
         issues=$((issues + 1))
     fi
 
+    # 5.5) scoped block gone or below the UFW jumps (v2.3.3)? Rules live
+    # only in the running firewall: a reboot or `ufw reload` wipes
+    # OUTPUT, and v2.3.1 APPENDED the rules below the UFW jumps, where
+    # they are never evaluated (all counters 0). If the oneshot unit
+    # says the block should be on but the rules are gone — or they sit
+    # below UFW — delete + re-insert them at the top of OUTPUT now.
+    if [[ -f "$SYSTEMD_UNIT_DIR/$FIREWALL_ONESHOT_UNIT" ]] && [[ "$(dns_leak_block_status 2>/dev/null)" == "open" ]]; then
+        echo -e " ${YELLOW}scoped block was enabled but its rules are gone (reboot / ufw reload?) — re-applying at the top of OUTPUT...${RESET}"
+        dns_leak_block_reapply 2>/dev/null || true
+        fixed=$((fixed + 1))
+    elif _scoped_block_below_ufw 2>/dev/null; then
+        echo -e " ${YELLOW}scoped block rules sit below the UFW jumps (never evaluated) — moving them to the top of OUTPUT...${RESET}"
+        dns_leak_block_reapply 2>/dev/null || true
+        fixed=$((fixed + 1))
+    fi
+
     validate_info_file
     info_write_system
     systemd_units_sync 2>/dev/null || true
@@ -171,9 +187,18 @@ doctor_sync() {
 # port + DNSBL status (zen.spamhaus.org and cb1.abuseat.org — the two
 # lists IPFighter deducts for). Prints one summary line.
 # Used by the Psiphon check below and by the per-core checks (Phase 4).
-
+# Latency (v2.3.3 — single back-to-back samples lie: 1-CPU box, 3
+# instances contend, Psiphon exits rotate and their load varies between
+# samples; the user measured 300ms then 600-700ms for the same egresses):
+# N=3 samples to Google's generate_204 endpoint (light, same Google edge
+# infra as Gemini — the service he actually uses), ~2s apart, NEVER in
+# parallel. Reports the MEDIAN + jitter (max-min across samples), not
+# one number. The exit IP still comes from one ifconfig.me fetch.
+# Results are appended to $HC_COLLECT (if set) as "label|median|jitter"
+# for ranking by health_check_all; unknown jitter records as 999999
+# (ranks last), a missing median as 999999 too.
 health_check_socks() {
-    local label="$1" sp="$2" creds="${3:-}" ip ms t0
+    local label="$1" sp="$2" creds="${3:-}" ip
     if ! [[ "$sp" =~ ^[0-9]+$ ]]; then
         echo -e " ${RED}$label: no SOCKS port${RESET}"
         return 1
@@ -181,13 +206,31 @@ health_check_socks() {
     command -v curl >/dev/null 2>&1 || { echo -e " ${RED}curl is required for health checks${RESET}"; return 1; }
     local curl_args=(-s --max-time 15 --socks5-hostname "127.0.0.1:$sp")
     [[ -n "$creds" ]] && curl_args+=(--proxy-user "$creds")
-    t0=$(date +%s%N)
     ip=$(curl "${curl_args[@]}" https://ifconfig.me 2>/dev/null || true)
-    ms=$(( ( $(date +%s%N) - t0 ) / 1000000 ))
     if [[ -z "$ip" ]]; then
         echo -e " ${RED}$label: SOCKS $sp answers nothing${RESET}"
         return 1
     fi
+    # Latency: 3 spaced samples to Google, median + jitter.
+    local samples=() i t ms
+    for i in 1 2 3; do
+        [[ "$i" -gt 1 ]] && sleep 2
+        t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 15 --socks5-hostname "127.0.0.1:$sp" ${creds:+--proxy-user "$creds"} https://www.google.com/generate_204 2>/dev/null || true)
+        ms=$(awk -v v="$t" 'BEGIN { if (v ~ /^[0-9.]+$/) printf "%d", v*1000; else print "" }')
+        [[ -n "$ms" ]] && samples+=("$ms")
+    done
+    local lat_text median="999999" jitter="999999"
+    if [[ "${#samples[@]}" -ge 2 ]]; then
+        median=$(printf '%s\n' "${samples[@]}" | sort -n | awk '{a[NR]=$1} END {n=NR; if (n%2) print a[(n+1)/2]; else print int((a[n/2]+a[n/2+1])/2)}')
+        jitter=$(printf '%s\n' "${samples[@]}" | sort -n | awk 'NR==1{min=$1} {max=$1} END {print max-min}')
+        lat_text="latency: ${median}ms median (jitter ${jitter}ms; samples $(IFS=/; echo "${samples[*]}")ms)"
+    elif [[ "${#samples[@]}" -eq 1 ]]; then
+        median="${samples[0]}"
+        lat_text="latency: ${samples[0]}ms (only 1/3 samples answered — jitter unknown)"
+    else
+        lat_text="latency: n/a (Google did not answer through this egress)"
+    fi
+    [[ -n "${HC_COLLECT:-}" ]] && echo "$label|$median|$jitter" >> "$HC_COLLECT"
     # DNSBL: reverse the IP, query the two lists (needs dig or host)
     local bl="clean" rev ans
     if command -v dig >/dev/null 2>&1; then
@@ -199,7 +242,7 @@ health_check_socks() {
     else
         bl="unknown (install dnsutils for DNSBL checks)"
     fi
-    echo -e " ${GREEN}$label${RESET}  IP: $ip  latency: ${ms}ms  blacklist: $bl"
+    echo -e " ${GREEN}$label${RESET}  IP: $ip  $lat_text  blacklist: $bl"
 }
 
 # For one instance: exit IP + latency through its SOCKS port, plus DNSBL
@@ -221,13 +264,43 @@ health_check_instance() {
 }
 
 health_check_all() {
-    echo -e "${YELLOW}Health check (exit IP + latency + blacklist):${RESET}"
-    local any=0
+    echo -e "${YELLOW}Health check (exit IP + median latency + jitter + blacklist):${RESET}"
+    echo -e "${CYAN}Latency: 3 samples per egress, ~2s apart, to Google (generate_204) — median + jitter, never back-to-back, never parallel.${RESET}"
+    local any=0 first=1
+    HC_COLLECT=$(mktemp)
     while IFS= read -r d; do
         any=1
+        # Short pause between egresses: measuring them back-to-back on
+        # this 1-CPU box contends and skews the numbers.
+        [[ "$first" -eq 0 ]] && sleep 1
+        first=0
         health_check_instance "$d" || true
     done < <(psiphon_dirs)
-    [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
+    if [[ "$any" -eq 0 ]]; then
+        echo -e "${RED}No psiphon-* locations found.${RESET}"
+        rm -f "$HC_COLLECT"; unset HC_COLLECT
+        return 0
+    fi
+    # Rank by median, then jitter; say which egress is best right now.
+    if [[ -s "$HC_COLLECT" ]]; then
+        local best blabel bmed bjit
+        best=$(sort -t'|' -k2,2n -k3,3n "$HC_COLLECT" | head -n1)
+        IFS='|' read -r blabel bmed bjit <<< "$best"
+        if [[ "$bmed" != "999999" ]]; then
+            echo -e " ${GREEN}Best now: $blabel (median ${bmed}ms, jitter ${bjit}ms)${RESET}"
+        fi
+        echo -e " ${CYAN}Ranking (median, then jitter):${RESET}"
+        sort -t'|' -k2,2n -k3,3n "$HC_COLLECT" | while IFS='|' read -r l m j; do
+            if [[ "$m" == "999999" ]]; then
+                echo -e "   $l — no usable latency samples"
+            elif [[ "$j" == "999999" ]]; then
+                echo -e "   $l — median ${m}ms, jitter unknown (1 sample)"
+            else
+                echo -e "   $l — median ${m}ms, jitter ${j}ms"
+            fi
+        done
+    fi
+    rm -f "$HC_COLLECT"; unset HC_COLLECT
 }
 
 # --- Per-core health checks (Phase 4) ---------------------------------------
@@ -294,6 +367,7 @@ multifon_nuke() {
     echo "  Instances + data:  $data_dir  (all psiphon-<cc> dirs, .allocated_ports,"
     echo "                     INFO.txt, .sandbox-gid, .dns, .core-sha256)"
     echo "  Units:             all multifon-psiphon-*.service (+ old oneshot autostart unit)"
+    echo "                     (+ the firewall oneshot multifon-firewall.service, if installed)"
     echo "  Users + group:     multifon-<cc> users (+ old bare multifon user), group multifon"
     echo "  Firewall:          scoped gid-owner + legacy uid-owner/server-wide rules"
     echo "                     (+ per-instance INPUT rules)"

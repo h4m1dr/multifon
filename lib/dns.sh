@@ -65,8 +65,15 @@ dns_leak_check() {
     # the owner-match rules entirely and report a false "leak".
     # (A bash /dev/udp open would NOT detect the block — UDP connect
     # succeeds locally even when the packet is dropped — so dig is used.)
+    # v2.3.3: the probe runs with the unit's gid too (sudo -u <user> -g
+    # multifon) so it models the sandboxed process exactly, not the
+    # login primary gid. And the message must never say "enable the
+    # block" when the block is already on: if the probe answers while
+    # the status says blocked, the rules exist but are not catching
+    # this traffic (v2.3.1: they sat below the UFW jumps) — that is a
+    # different problem from "block is off".
     if command -v dig >/dev/null 2>&1; then
-        local probe_cmd="dig" probe_user=""
+        local probe_cmd="dig" probe_sudo="sudo" probe_user=""
         if [[ -n "$dir" ]]; then
             probe_user=$(systemd_instance_user "$dir" 2>/dev/null || true)
             if [[ -n "$probe_user" ]] && ! id -u "$probe_user" >/dev/null 2>&1; then
@@ -75,19 +82,29 @@ dns_leak_check() {
         fi
         [[ -z "$probe_user" ]] && probe_user=$(systemd_first_instance_user || true)
         if [[ -n "$probe_user" ]]; then
-            probe_cmd="sudo -u $probe_user dig"
+            probe_sudo="sudo -u $probe_user"
+            if getent group "$SANDBOX_GROUP" >/dev/null 2>&1; then
+                probe_sudo="sudo -u $probe_user -g $SANDBOX_GROUP"
+            fi
+            probe_cmd="$probe_sudo dig"
             echo -e " Probing as instance user $probe_user (group $SANDBOX_GROUP — the gid the scoped rules match)."
         else
             echo -e " ${YELLOW}No instance user exists yet (no psiphon-* folder) — probing as the current user (host view, not the sandbox).${RESET}"
         fi
+        local block_status
+        block_status=$(dns_leak_block_status)
         if timeout 5 $probe_cmd +short +time=3 +tries=1 "@$DNS_PROBE_RESOLVER" example.com >/dev/null 2>&1; then
-            echo -e " ${RED}LEAK PATH OPEN: direct DNS to $DNS_PROBE_RESOLVER:53 answers. Enable the scoped port-53 block (dns_force_enable).${RESET}"
+            if [[ "$block_status" == blocked* ]]; then
+                echo -e " ${RED}LEAK PATH OPEN: direct DNS to $DNS_PROBE_RESOLVER:53 answers — but the scoped block is ON ($block_status). The rules exist but are NOT catching this traffic: check rule order (sudo iptables -L OUTPUT -n -v --line-numbers) and re-enable once to move them to the top of OUTPUT.${RESET}"
+            else
+                echo -e " ${RED}LEAK PATH OPEN: direct DNS to $DNS_PROBE_RESOLVER:53 answers. Enable the scoped port-53 block (dns_force_enable).${RESET}"
+            fi
         else
             echo -e " ${GREEN}Direct DNS to $DNS_PROBE_RESOLVER:53 does not answer — no plain-DNS leak path to arbitrary resolvers.${RESET}"
         fi
         # Bootstrap path must still work for the instance user.
         if [[ -n "$probe_user" ]]; then
-            if timeout 5 sudo -u "$probe_user" dig +short +time=3 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1; then
+            if timeout 5 $probe_sudo dig +short +time=3 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1; then
                 echo -e " ${GREEN}Bootstrap DNS still works for $probe_user (1.1.1.1 allowed).${RESET}"
             else
                 echo -e " ${RED}Bootstrap DNS is broken for $probe_user — the core cannot resolve its server list. Check the allow-list rules.${RESET}"
@@ -170,13 +187,20 @@ dns_force_status() {
 # Start order matters: the egress core must be up BEFORE its forwarder
 # starts — a first-ever start with no cache and no proxy fails.
 #
-# Bootstrap lookup — UNVERIFIED, needs a tcpdump test on the server:
-# whether dnscrypt-proxy's one-time lookup of the DoH server hostname goes
-# through the SOCKS proxy or goes direct is not verified. Mitigation used
-# here: server_names = ['cloudflare'] (its stamp embeds 1.1.1.1, so no
-# bootstrap lookup is needed at all) AND bootstrap_resolvers are set to
-# 1.1.1.1/8.8.8.8 only — the same IPs the v2.3 scoped port-53 block
-# explicitly allows for the `multifon` group. Test on the server:
+# Bootstrap lookup — no download, no bootstrap lookup at all (v2.3.3):
+# the DoH server comes from a [static] stamp copied VERBATIM from the
+# upstream public-resolvers list (DNSCrypt/dnscrypt-resolvers v3,
+# `cloudflare` entry, 1.0.0.1) — verified with the real dnscrypt-proxy
+# 2.0.45 binary (`-check` passes, process stays up and listens).
+# No [sources] section on purpose: with sources, dnscrypt-proxy
+# DOWNLOADS the resolver list at startup through the configured SOCKS
+# proxy — if the egress is down, the forwarder exits before it ever
+# serves (verified live: FATAL on the download when :1081 refused).
+# And `bootstrap_resolvers` is NOT a valid key in 2.0.45 (it FATALs
+# with "Unsupported key") — the correct 2.0.45 key is
+# `fallback_resolvers` (upstream example-dnscrypt-proxy.toml line 228);
+# it is only used if a stamp ever carries a hostname, which this one
+# does not (IP embedded). Test on the server:
 #   dig @127.0.0.1 -p <listen> example.com
 #   tcpdump -i any udp port 53 and not host 127.0.0.1   # expect: nothing
 # If that test shows a leak, the forwarder moves to Phase before 6.
@@ -208,13 +232,22 @@ dns_forwarder_config() {
 # Generated by multifon — per-egress DoH forwarder (dnscrypt-proxy).
 # Egress SOCKS 127.0.0.1:$socks -> DNS listener 127.0.0.1:$listen.
 # Do not edit by hand; regenerate with dns_forwarder_config.
+# Validated against dnscrypt-proxy 2.0.45 (the version Ubuntu 24.04
+# ships): "bootstrap_resolvers" is NOT a key in 2.0.45 (FATAL) — the
+# correct key is "fallback_resolvers". The server comes from a [static]
+# stamp, so no [sources] download is needed at startup (see lib/dns.sh
+# header comment). Stamp copied verbatim from
+# DNSCrypt/dnscrypt-resolvers v3 public-resolvers.md, "cloudflare".
 listen_addresses = ['127.0.0.1:$listen']
 server_names = ['cloudflare']
 doh_servers = true
 proxy = 'socks5://127.0.0.1:$socks'
 force_tcp = true
 cache = true
-bootstrap_resolvers = ['1.1.1.1:53', '8.8.8.8:53']
+fallback_resolvers = ['1.1.1.1:53', '8.8.8.8:53']
+[static]
+  [static.'cloudflare']
+  stamp = 'sdns://AgcAAAAAAAAABzEuMC4wLjEAEmRucy5jbG91ZGZsYXJlLmNvbQovZG5zLXF1ZXJ5'
 EOF
     echo "$toml"
 }
@@ -270,13 +303,27 @@ dns_forwarder_start() {
         echo -e "${YELLOW}Forwarder for $name is already running (pid $(cat "$pidfile")).${RESET}"
         return 0
     fi
-    nohup dnscrypt-proxy -config "$toml" >/dev/null 2>&1 &
+    local logfile="$DNS_DIR/dnscrypt-proxy-$name.log"
+    # Validate the config BEFORE starting: a bad toml kills the process
+    # instantly (v2.3.1: `bootstrap_resolvers` FATALed in 2.0.45 and the
+    # only message was "check the config"). -check prints the real error.
+    local check_out
+    if ! check_out=$(dnscrypt-proxy -check -config "$toml" 2>&1); then
+        echo -e "${RED}dnscrypt-proxy config check failed for $name:${RESET}"
+        echo "$check_out" | tail -n 5
+        echo -e "${YELLOW}Config: $toml${RESET}"
+        return 1
+    fi
+    rm -f "$logfile"
+    nohup dnscrypt-proxy -config "$toml" >>"$logfile" 2>&1 &
     echo $! > "$pidfile"
     sleep 2
     if kill -0 "$(cat "$pidfile")" 2>/dev/null; then
         echo -e "${GREEN}DoH forwarder up:${RESET} $name — SOCKS $socks -> DNS 127.0.0.1:$listen (pid $(cat "$pidfile"))"
     else
-        echo -e "${RED}dnscrypt-proxy for $name exited — check the config: $toml${RESET}"
+        echo -e "${RED}dnscrypt-proxy for $name exited — last log lines ($logfile):${RESET}"
+        tail -n 5 "$logfile" 2>/dev/null || echo "  (no log output)"
+        echo -e "${YELLOW}Config: $toml${RESET}"
         rm -f "$pidfile"
         return 1
     fi
@@ -345,7 +392,12 @@ dns_forwarder_status() {
 # (10810) when their SOCKS ports are listening.
 dns_forwarder_start_all() {
     dns_forwarder_install || return 1
-    local d sp name spec started=0 skipped=0
+    # v2.3.3: running / started / failed are counted separately. The old
+    # code printed "No running egresses" whenever zero forwarders
+    # started — including when all three units were ACTIVE and every
+    # forwarder had simply exited on a bad config. That message is now
+    # only printed when genuinely nothing is running.
+    local d sp name spec started=0 failed=0 running=0 skipped=0
     while IFS= read -r d; do
         read -r _hp sp < <(instance_ports "$d")
         [[ "$sp" =~ ^[0-9]+$ ]] || continue
@@ -354,17 +406,30 @@ dns_forwarder_start_all() {
             skipped=$((skipped + 1))
             continue
         fi
-        dns_forwarder_start "$sp" "" "$(basename "$d")" && started=$((started + 1)) || true
+        running=$((running + 1))
+        if dns_forwarder_start "$sp" "" "$(basename "$d")"; then
+            started=$((started + 1))
+        else
+            failed=$((failed + 1))
+        fi
     done < <(psiphon_dirs)
     for spec in "warp:1091" "tor:9050" "arman:10810"; do
         name="${spec%%:*}"; sp="${spec##*:}"
         if port_in_use "$sp"; then
-            dns_forwarder_start "$sp" "" "$name" && started=$((started + 1)) || true
+            running=$((running + 1))
+            if dns_forwarder_start "$sp" "" "$name"; then
+                started=$((started + 1))
+            else
+                failed=$((failed + 1))
+            fi
         fi
     done
-    if [[ "$started" -eq 0 ]]; then
+    if [[ "$running" -eq 0 ]]; then
         echo ""
         echo -e "${YELLOW}No running egresses — start the instances first (menu 3 -> 3), then run this again.${RESET}"
+    elif [[ "$failed" -gt 0 ]]; then
+        echo ""
+        echo -e "${RED}$failed forwarder(s) failed to start (see the errors above) — $started running, $running egress(es) up.${RESET}"
     fi
     echo ""
     echo -e "${YELLOW}Bootstrap-lookup check (still needs a tcpdump test on the server):${RESET}"

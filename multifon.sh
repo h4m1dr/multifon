@@ -1,5 +1,5 @@
 #!/bin/bash
-# multifon v2.3.1 — thin entrypoint (v2.3.1: 90-byte-wrapper fix, see docs/PHASES.md).
+# multifon v2.3.3 — thin entrypoint (v2.3.3: UFW placement + dnscrypt-proxy toml + median/jitter health check, see docs/PHASES.md).
 # All logic lives in lib/*.sh; this file only resolves its own directory,
 # sources the modules, and starts the main menu.
 # Run: ./multifon.sh  — or `multifon` after installing the command (menu 9).
@@ -8,6 +8,7 @@
 #      ./multifon.sh start-all  — start every instance unit (systemctl).
 #      ./multifon.sh stop-all   — stop every instance unit.
 #      ./multifon.sh status     — show every instance unit's state.
+#      ./multifon.sh reapply-block — re-insert the scoped DNS/STUN block at the top of OUTPUT (boot-time unit + repair path).
 # v2.3: instances are systemd units (one user + unit each, lib/systemd.sh).
 # start.sh and start-psiphons.sh are gone.
 # Existing behaviour is preserved: same folders (~/psiphon/psiphon-<cc>),
@@ -44,9 +45,15 @@ case "${1:-}" in
     stop-all)    systemd_stop_all ;;
     status)      systemd_units_status ;;
     repair-core) repair_instance_binaries ;;
+    reapply-block)
+        # Boot-time re-apply (multifon-firewall.service) + repair path:
+        # iptables rules live only in the running firewall, so a reboot
+        # or `ufw reload` wipes OUTPUT — this re-inserts the scoped
+        # block at the top of OUTPUT. Idempotent; safe to run by hand.
+        dns_leak_block_reapply ;;
     nuke)        multifon_nuke ;;
     "" )         main_loop ;;
-    *)           echo "Usage: $0 [fix|install|start-all|stop-all|status|repair-core|nuke]" >&2
+    *)           echo "Usage: $0 [fix|install|start-all|stop-all|status|repair-core|reapply-block|nuke]" >&2
                  echo "  (no argument)  open the menu" >&2
                  echo "  fix            run the checklist fixer" >&2
                  echo "  install        install the \`multifon\` command on PATH" >&2
@@ -54,6 +61,7 @@ case "${1:-}" in
                  echo "  stop-all       stop every instance unit" >&2
                  echo "  status         show every instance unit's state" >&2
                  echo "  repair-core    re-copy the verified core into every instance" >&2
+                 echo "  reapply-block  re-insert the scoped DNS/STUN block at the top of OUTPUT" >&2
                  echo "  nuke           clean slate — delete everything multifon owns" >&2
                  exit 1 ;;
 esac

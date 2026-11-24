@@ -36,6 +36,16 @@ _fw_iptables_add() {
     sudo iptables -A "$chain" "$@"
 }
 
+_fw_iptables_insert() {
+    # _fw_iptables_insert <chain> <position> <rule...>
+    # Insert at an exact position (used by the scoped block: the rules
+    # must sit ABOVE any earlier ACCEPT — see _scoped_iptables_add).
+    # Idempotent: an identical rule anywhere in the chain is left alone.
+    local chain="$1" pos="$2"; shift 2
+    _fw_iptables_has "$chain" "$@" && return 0
+    sudo iptables -I "$chain" "$pos" "$@"
+}
+
 _fw_iptables_del() {
     local chain="$1"; shift
     sudo iptables -D "$chain" "$@" >/dev/null 2>&1 || true
@@ -161,11 +171,27 @@ firewall_list() {
 # running instances as their users. "Disable" removes exactly the
 # tagged rules that "enable" added — nothing else. Enabling also removes
 # any v2.0 (server-wide) or v2.1 (--uid-owner multifon) legacy rules.
+#
+# v2.3.3 — PLACEMENT (confirmed live 2026-11-24 with the full chain +
+# counters): the rules were correct but APPENDED (-A) at the END of
+# OUTPUT, AFTER UFW's jumps (ufw-before-output etc.). UFW's
+# before-output chain ACCEPTs ~everything, so only a fraction of
+# packets ever returns to the main chain — all multifon rules showed
+# 0 packets / 0 bytes and the REJECT counters stayed 0 after a dig as
+# multifon-nl. The leak was real; the placement was wrong. The block
+# is now INSERTED at the very TOP of OUTPUT (position 1, before the
+# UFW jumps), bootstrap ACCEPTs first, then the REJECTs. Rules live
+# only in the running firewall: a reboot or `ufw reload` wipes OUTPUT,
+# so enabling also installs a oneshot unit (multifon-firewall.service)
+# that re-applies them at boot, and doctor_sync re-applies them when
+# it finds them gone — or sitting below the UFW jumps.
 
 # The shared group lives in lib/systemd.sh (SANDBOX_GROUP); the marker
 # file too (SANDBOX_GID_FILE). The legacy v2.1 single-user marker is
 # SANDBOX_UID_FILE_LEGACY there. This file only uses them.
 STUN_PORTS="3478,5349,19302"
+# Oneshot unit that re-applies this block at boot (see below).
+FIREWALL_ONESHOT_UNIT="multifon-firewall.service"
 # Resolvers the sandbox uid may still use (bootstrap DNS, see above).
 DNS_ALLOWLIST="1.1.1.1 8.8.8.8 9.9.9.9"
 # A resolver deliberately NOT on the allow-list, used by the leak probe
@@ -204,15 +230,15 @@ sandbox_group_setup() {
 scoped_block_preview() {
     local gid
     gid=$(getent group "$SANDBOX_GROUP" 2>/dev/null | cut -d: -f3 || echo "<gid-of-$SANDBOX_GROUP-after-setup>")
-    echo -e "${YELLOW}Scoped block preview (applies ONLY to group $SANDBOX_GROUP / $gid):${RESET}"
-    local ip
+    echo -e "${YELLOW}Scoped block preview (inserted at the TOP of OUTPUT — position 1, BEFORE the UFW jumps; applies ONLY to group $SANDBOX_GROUP / $gid):${RESET}"
+    local ip pos=1
     for ip in $DNS_ALLOWLIST; do
-        echo "  iptables -A OUTPUT -m owner --gid-owner $SANDBOX_GROUP -p udp -d $ip --dport 53 -j ACCEPT   # bootstrap DNS"
-        echo "  iptables -A OUTPUT -m owner --gid-owner $SANDBOX_GROUP -p tcp -d $ip --dport 53 -j ACCEPT   # bootstrap DNS"
+        echo "  iptables -I OUTPUT $pos -m owner --gid-owner $SANDBOX_GROUP -p udp -d $ip --dport 53 -j ACCEPT   # bootstrap DNS"; pos=$((pos+1))
+        echo "  iptables -I OUTPUT $pos -m owner --gid-owner $SANDBOX_GROUP -p tcp -d $ip --dport 53 -j ACCEPT   # bootstrap DNS"; pos=$((pos+1))
     done
-    echo "  iptables -A OUTPUT -m owner --gid-owner $SANDBOX_GROUP -p udp --dport 53 -j REJECT   # all other DNS"
-    echo "  iptables -A OUTPUT -m owner --gid-owner $SANDBOX_GROUP -p tcp --dport 53 -j REJECT   # all other DNS"
-    echo "  iptables -A OUTPUT -m owner --gid-owner $SANDBOX_GROUP -p udp -m multiport --dports $STUN_PORTS -j REJECT   # STUN/TURN"
+    echo "  iptables -I OUTPUT $pos -m owner --gid-owner $SANDBOX_GROUP -p udp --dport 53 -j REJECT   # all other DNS"; pos=$((pos+1))
+    echo "  iptables -I OUTPUT $pos -m owner --gid-owner $SANDBOX_GROUP -p tcp --dport 53 -j REJECT   # all other DNS"; pos=$((pos+1))
+    echo "  iptables -I OUTPUT $pos -m owner --gid-owner $SANDBOX_GROUP -p udp -m multiport --dports $STUN_PORTS -j REJECT   # STUN/TURN"
     echo -e "${CYAN}Xray (root), apt (root) and dig (root) do NOT match --gid-owner $SANDBOX_GROUP, so they keep working.${RESET}"
     if ! sandbox_group_enabled; then
         echo -e "${YELLOW}Setup needed first: create group '$SANDBOX_GROUP', ensure every instance has its own user + unit, restart the running ones.${RESET}"
@@ -240,17 +266,21 @@ dns_leak_block_remove_legacy() {
 }
 
 # Add the scoped DNS + STUN rules (iptables). Idempotent.
+# v2.3.3: INSERT at the TOP of OUTPUT (positions 1..9), never append.
+# Appended rules sat BELOW UFW's jumps and were never evaluated (all
+# counters 0 while 63M packets went through ufw-before-output). The
+# block only matches gid $SANDBOX_GROUP, so top placement affects
+# nothing else. Bootstrap ACCEPTs go in first, then the REJECTs —
+# iptables takes the first match, so the order is the whole point.
 _scoped_iptables_add() {
-    local ip
-    # Bootstrap allow-list first: iptables takes the first match, so the
-    # ACCEPTs must be added before the REJECTs.
+    local ip pos=1
     for ip in $DNS_ALLOWLIST; do
-        _fw_iptables_add OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p udp -d "$ip" --dport 53 -m comment --comment "multifon:dns-leak-block" -j ACCEPT
-        _fw_iptables_add OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p tcp -d "$ip" --dport 53 -m comment --comment "multifon:dns-leak-block" -j ACCEPT
+        _fw_iptables_insert OUTPUT "$pos" -m owner --gid-owner "$SANDBOX_GROUP" -p udp -d "$ip" --dport 53 -m comment --comment "multifon:dns-leak-block" -j ACCEPT; pos=$((pos+1))
+        _fw_iptables_insert OUTPUT "$pos" -m owner --gid-owner "$SANDBOX_GROUP" -p tcp -d "$ip" --dport 53 -m comment --comment "multifon:dns-leak-block" -j ACCEPT; pos=$((pos+1))
     done
-    _fw_iptables_add OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p udp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with icmp-port-unreachable
-    _fw_iptables_add OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p tcp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with tcp-reset
-    _fw_iptables_add OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p udp -m multiport --dports "$STUN_PORTS" -m comment --comment "multifon:stun-block" -j REJECT --reject-with icmp-port-unreachable
+    _fw_iptables_insert OUTPUT "$pos" -m owner --gid-owner "$SANDBOX_GROUP" -p udp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with icmp-port-unreachable; pos=$((pos+1))
+    _fw_iptables_insert OUTPUT "$pos" -m owner --gid-owner "$SANDBOX_GROUP" -p tcp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with tcp-reset; pos=$((pos+1))
+    _fw_iptables_insert OUTPUT "$pos" -m owner --gid-owner "$SANDBOX_GROUP" -p udp -m multiport --dports "$STUN_PORTS" -m comment --comment "multifon:stun-block" -j REJECT --reject-with icmp-port-unreachable; pos=$((pos+1))
 }
 
 # Remove exactly the scoped rules added above (same match args).
@@ -263,6 +293,118 @@ _scoped_iptables_del() {
     _fw_iptables_del OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p udp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with icmp-port-unreachable
     _fw_iptables_del OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p tcp --dport 53 -m comment --comment "multifon:dns-leak-block" -j REJECT --reject-with tcp-reset
     _fw_iptables_del OUTPUT -m owner --gid-owner "$SANDBOX_GROUP" -p udp -m multiport --dports "$STUN_PORTS" -m comment --comment "multifon:stun-block" -j REJECT --reject-with icmp-port-unreachable
+}
+
+# _scoped_reject_pkts — sum of the packet counters of the two DNS REJECT
+# rules (udp + tcp). Prints 0 when the rules are absent or unreadable.
+# (`iptables -L` shows the rule comment as /* multifon:... */.)
+_scoped_reject_pkts() {
+    sudo iptables -L OUTPUT -v -n -x 2>/dev/null \
+        | grep "multifon:dns-leak-block" | grep "REJECT" \
+        | awk '{s+=$1} END {print s+0}'
+}
+
+# _scoped_block_below_ufw — true when the first multifon DNS rule sits
+# BELOW a UFW jump in OUTPUT, i.e. UFW ACCEPTs the traffic before our
+# rules are ever evaluated. (The v2.3.1 placement: rules 7-15, UFW
+# jumps 1-6, all multifon counters 0.)
+_scoped_block_below_ufw() {
+    local out first_mf first_ufw
+    out=$(sudo iptables -S OUTPUT 2>/dev/null || true)
+    [[ -n "$out" ]] || return 1
+    first_mf=$(echo "$out" | grep -n -F "multifon:dns-leak-block" | head -n1 | cut -d: -f1)
+    first_ufw=$(echo "$out" | grep -n -F "ufw-before-output" | head -n1 | cut -d: -f1)
+    [[ -n "$first_mf" && -n "$first_ufw" && "$first_ufw" -lt "$first_mf" ]]
+}
+
+# dns_leak_block_selftest — prove the block actually catches traffic.
+# Reads the DNS REJECT counters, runs one direct-DNS probe as the first
+# instance user (with the unit's gid), reads the counters again.
+#   0 = block works (counter moved, probe REJECTed)
+#   1 = LEAK (probe answered — the block is not catching this traffic)
+#   2 = inconclusive (no answer, counter did not move — probe failed
+#       for another reason, e.g. no route; check counters by hand)
+# Never silent: it always prints what it found.
+dns_leak_block_selftest() {
+    local user before after
+    user=$(systemd_first_instance_user || true)
+    if [[ -z "$user" ]]; then
+        echo -e " ${YELLOW}Self-test skipped — no instance user yet (no instances).${RESET}"
+        return 2
+    fi
+    command -v dig >/dev/null 2>&1 || {
+        echo -e " ${YELLOW}Self-test skipped — dig is not installed.${RESET}"
+        return 2
+    }
+    before=$(_scoped_reject_pkts)
+    if timeout 5 sudo -u "$user" -g "$SANDBOX_GROUP" dig +short +time=3 +tries=1 "@$DNS_PROBE_RESOLVER" example.com >/dev/null 2>&1; then
+        after=$(_scoped_reject_pkts)
+        echo -e " ${RED}SELF-TEST FAILED: direct DNS as $user (@$DNS_PROBE_RESOLVER) still answers, REJECT counter $before -> $after — the block is NOT catching traffic. Check rule order: sudo iptables -L OUTPUT -n -v --line-numbers (the multifon rules must sit ABOVE the UFW jumps).${RESET}"
+        return 1
+    fi
+    after=$(_scoped_reject_pkts)
+    if [[ "${after:-0}" -gt "${before:-0}" ]]; then
+        echo -e " ${GREEN}Self-test OK: direct DNS as $user is REJECTed (REJECT counter $before -> $after).${RESET}"
+        return 0
+    fi
+    echo -e " ${YELLOW}Self-test inconclusive: probe got no answer but the REJECT counter did not move ($before -> $after) — the probe may have failed for another reason (no route?). Check counters by hand: sudo iptables -L OUTPUT -n -v.${RESET}"
+    return 2
+}
+
+# Boot-time durability: iptables rules live only in the running
+# firewall — a reboot or `ufw reload` wipes OUTPUT, so the block would
+# silently disappear. Enabling installs this oneshot unit, which
+# re-applies the rules at boot (before the instances need them).
+# The unit file itself is the "block is enabled" marker: disabling
+# (or nuke) removes it again.
+firewall_oneshot_install() {
+    local unit="$SYSTEMD_UNIT_DIR/$FIREWALL_ONESHOT_UNIT" tmp
+    tmp=$(mktemp) || return 1
+    {
+        printf '%s\n' "[Unit]"
+        printf '%s\n' "Description=multifon: re-apply scoped DNS/STUN block (OUTPUT is wiped by reboot / ufw reload)"
+        printf '%s\n' "After=network-online.target"
+        printf '%s\n' "Wants=network-online.target"
+        printf '%s\n' ""
+        printf '%s\n' "[Service]"
+        printf '%s\n' "Type=oneshot"
+        printf 'ExecStart=%s/multifon.sh reapply-block\n' "$MULTIFON_DIR"
+        printf '%s\n' "RemainAfterExit=yes"
+        printf '%s\n' ""
+        printf '%s\n' "[Install]"
+        printf '%s\n' "WantedBy=multi-user.target"
+    } > "$tmp"
+    sudo install -m 0644 "$tmp" "$unit"
+    rm -f "$tmp"
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo systemctl enable "$FIREWALL_ONESHOT_UNIT" >/dev/null 2>&1 || true
+}
+
+firewall_oneshot_remove() {
+    sudo systemctl disable --now "$FIREWALL_ONESHOT_UNIT" >/dev/null 2>&1 || true
+    sudo rm -f "$SYSTEMD_UNIT_DIR/$FIREWALL_ONESHOT_UNIT"
+    sudo systemctl daemon-reload 2>/dev/null || true
+}
+
+# dns_leak_block_reapply — boot-time re-apply (multifon-firewall.service)
+# and the repair path for rules that went missing or ended up below the
+# UFW jumps. Deletes any existing scoped rules first, then re-inserts
+# them at the top. Idempotent; safe to run any time the group exists.
+dns_leak_block_reapply() {
+    sandbox_group_enabled || return 0
+    case "$(firewall_backend)" in
+        iptables)
+            _scoped_iptables_del
+            _scoped_iptables_add
+            # Also (re-)install the boot unit, so a repair by doctor does
+            # not leave the block unprotected against the next reboot.
+            firewall_oneshot_install
+            echo "Scoped DNS + STUN block re-applied (top of OUTPUT)."
+            ;;
+        *)
+            echo "reapply-block: no iptables backend — nothing done."
+            ;;
+    esac
 }
 
 # nft best-effort equivalent (meta skgid). Not tested on this box — the
@@ -303,9 +445,17 @@ dns_leak_block_enable() {
     dns_leak_block_remove_legacy
     case "$(firewall_backend)" in
         iptables)
+            # Delete any existing scoped rules first: a v2.3.1 install
+            # left them APPENDED below the UFW jumps, and the insert
+            # below skips rules that already exist anywhere — without
+            # this the re-enable would leave them dead.
+            _scoped_iptables_del
             _scoped_iptables_add
+            firewall_oneshot_install
             echo -e "${GREEN}Scoped DNS block on: only group $SANDBOX_GROUP is affected (bootstrap DNS to $DNS_ALLOWLIST still allowed).${RESET}"
             echo -e "${GREEN}Scoped STUN block on: UDP $STUN_PORTS REJECTed for group $SANDBOX_GROUP.${RESET}"
+            echo -e "${CYAN}Rules inserted at the TOP of OUTPUT (above the UFW jumps) + oneshot unit $FIREWALL_ONESHOT_UNIT installed, so a reboot or 'ufw reload' re-applies them.${RESET}"
+            dns_leak_block_selftest || true
             ;;
         nft)
             _scoped_nft_add
@@ -324,6 +474,7 @@ dns_leak_block_disable() {
         iptables)
             _scoped_iptables_del
             dns_leak_block_remove_legacy
+            firewall_oneshot_remove
             echo -e "${GREEN}Scoped DNS + STUN block off (only multifon-tagged rules removed).${RESET}"
             ;;
         nft)
@@ -374,7 +525,13 @@ dns_leak_block_status() {
     case "$(firewall_backend)" in
         iptables)
             case "$(_scoped_block_kind "multifon:dns-leak-block")" in
-                scoped) echo "blocked (scoped, gid $SANDBOX_GROUP)" ;;
+                scoped)
+                    if _scoped_block_below_ufw; then
+                        echo "blocked (scoped, gid $SANDBOX_GROUP) — BUT the rules sit BELOW the UFW jumps, so UFW ACCEPTs the traffic first; re-enable once to move them to the top"
+                    else
+                        echo "blocked (scoped, gid $SANDBOX_GROUP)"
+                    fi
+                    ;;
                 legacy) echo "blocked (LEGACY uid-owner/server-wide — remove it: re-enable once to migrate)" ;;
                 both) echo "blocked (scoped, gid $SANDBOX_GROUP) + LEGACY rules also present — re-enable once to remove them" ;;
                 *) echo "open" ;;
@@ -400,7 +557,13 @@ stun_block_status() {
     case "$(firewall_backend)" in
         iptables)
             case "$(_scoped_block_kind "multifon:stun-block")" in
-                scoped) echo "blocked (scoped, gid $SANDBOX_GROUP; server-side only — see comment in lib/firewall.sh)" ;;
+                scoped)
+                    if _scoped_block_below_ufw; then
+                        echo "blocked (scoped, gid $SANDBOX_GROUP; server-side only) — BUT the rules sit BELOW the UFW jumps; re-enable once to move them to the top"
+                    else
+                        echo "blocked (scoped, gid $SANDBOX_GROUP; server-side only — see comment in lib/firewall.sh)"
+                    fi
+                    ;;
                 legacy) echo "blocked (LEGACY uid-owner — remove it: re-enable once to migrate)" ;;
                 both) echo "blocked (scoped, gid $SANDBOX_GROUP) + LEGACY rules also present — re-enable once to remove them" ;;
                 *) echo "open" ;;
