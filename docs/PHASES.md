@@ -4,6 +4,21 @@ Work ahead, in order. Phase 1–2 ship in this PR (the v2 refactor).
 Phases 3–5 are the plan, not promises — each one lands as its own
 reviewed change on `codr1`.
 
+## Where we are now (2026-11-24, from the menu screenshot)
+- **Installed on the server: v2.0.0** (PR #1 merged to main, merge
+  commit 69a72744). That is the menu in the screenshot: options 1–9.
+  Phases 1 + 2 are installed, Phase 3 mostly installed (rotate + health
+  check live under menu 3 → 7/8/9 and menu 5 → 2; fully automatic
+  rotation and country ranking are still pending).
+- **Not installed yet: v2.1** (PR #2 open, commit 1e8a0302 on `codr1`).
+  That is where the updaters (menu 10), `multifon fix` (menu 11), the
+  scoped port-53 + STUN block, sandbox TZ and the Arman stub live.
+  The screenshot menu has no 10/11 because it is v2.0, not v2.1.
+- **Research is done** (2026-11-24, `~/workspace/multifon-research/`):
+  DoH forwarder, WARP headless, Tor, Geph, Arman headless, Xray patch,
+  Telegram control plane, Windows client. Its verdicts are folded into
+  Phases 4–5 below.
+
 ## v2.1 — shipped on `codr1` (on top of the v2 PR)
 - [x] Scoped port-53 + STUN block: the v2.0 server-wide OUTPUT block is
   replaced by iptables owner-match rules on a dedicated `multifon` uid
@@ -20,7 +35,9 @@ reviewed change on `codr1`.
 - [x] Per-service locations + checklist + fixer: `services.yaml`,
   `docs/SERVICES.md`, `lib/fixer.sh` (`multifon fix`, menu 11).
 - [x] Arman VPN core added to `cores.yaml` as a stub (Firefox Account,
-  50 GB/month). Headless/server use unverified — see the stub note.
+  50 GB/month). Headless/server use has since been VERIFIED by research
+  (2026-11-24, `~/workspace/multifon-research/05-arman-vpn-headless.md`):
+  server variant, SOCKS5 127.0.0.1:10810 — see Phase 4.
 - [x] Phase 6 designed below (design only — no bot code, no token).
 
 ## Phase 1 — Bug fixes (this PR)
@@ -65,41 +82,44 @@ reviewed change on `codr1`.
 - [~] Auto-rotate on dirty IP: `multifon fix` (menu 11) offers a
   rotation on a listed IP, with confirmation. Fully automatic rotation
   (no prompt) is still pending.
-- [ ] Rank countries by measured latency + blacklist + score instead of
-  guessing: log health-check results per country and sort by them.
+- [ ] Rank countries by measured results: moved to Phase 5 — it needs
+  the multi-country instances first.
 
 ## Phase 4 — New cores + Force DNS
-- [ ] WARP core: finish `core_install_warp` — register WARP with `wgcf`,
-  generate `wireproxy.conf`, start/stop via the cores loader. Remember
-  wireproxy has no SOCKS5 UDP yet: TCP + DoH only.
-- [ ] Tor core: wire start/stop (tor on 9050) into the cores loader.
-  Document clearly that Tor exits are bad for Google/AI scores.
-- [ ] Geph core: confirm the upstream repo/binary, then wire it in.
-  Do not download from a guessed URL.
-- [ ] Arman VPN core: verify headless/server use from the upstream
-  project first (its docs read did not pass a safety check, so nothing
-  about its server install, proxy port or CLI is claimed here), then
-  wire the SOCKS endpoint into the cores loader. Needs a Firefox
-  Account (50 GB/month per account — no token in this repo).
-- [ ] Force DNS, full version: per-egress DoH forwarder (one local DNS
-  listener per SOCKS port, e.g. via `socat` or a small DoH client) so DNS
-  for each core leaves through that core — this is also what finally
-  removes the bootstrap allow-list from the scoped port-53 block
-  (the local forwarder answers the core's DNS via DoH instead).
-  The foundation is already here: `dns_doh_query`, `dns_leak_check`,
-  and the scoped port-53 + STUN block (menu 8, v2.1). `lib/dns.sh`.
-- [ ] Per-core health checks (latency + DNSBL) for WARP/Tor/Geph/Arman,
-  same format as the Psiphon one.
+
+### Suggested cores (researched 2026-11-24 — see `~/workspace/multifon-research/`)
+| Core | What it is | Status | SOCKS port | Notes |
+|---|---|---|---|---|
+| Psiphon (official v2.0.43) | psiphon-tunnel-core, Psiphon-Labs | Ready — default core | per instance (1081+) | Pinned in `cores.yaml`. His current /usr/bin/psiphon is from SpherionOS/PsiphonLinux, not the official release — the updater replaces it with the official binary. |
+| WARP (Cloudflare) | wgcf + wireproxy (windtf/wireproxy) | Ready to implement | per core (1091+) | `wgcf register --accept-tos` (no account/browser) → `wgcf generate` → `[Socks5]` in wgcf-profile.conf → `wireproxy -c`. TCP-only SOCKS5 (no UDP yet). Best core for muse.ai (Cloudflare IPs least flagged). |
+| Arman VPN (Firefox VPN) | armanlife/arman-vpn-client, server variant | Ready to implement (verified 2026-11-24) | 127.0.0.1:10810 | SOCKS5 + CLI + web panel (10820), multi-account rotation at 95%. Needs his one-time browser sign-in (Windows/Android app) + backup zip moved to the server via scp. 50 GB/month per Firefox Account. One instance = one active country. |
+| Tor | tor, SocksPort 9050 | Fallback only | 9050 | Exits heavily blocked by Google/AI — scores worse, not better. Only as a last-resort core. |
+| Geph | geph4-client | BLOCKED | — | No verified prebuilt linux-amd64 binary (no GitHub Release; install is `cargo install`, last crate Feb 2025). Check geph4 releases, then geph5, before writing any installer. Do NOT download from a guessed URL. |
+
+### Remaining problems in Phase 4
+- [ ] WARP core: finish `core_install_warp` — register WARP with `wgcf`, generate `wireproxy.conf`, start/stop via the cores loader. Remember wireproxy has no SOCKS5 UDP yet: TCP + DoH only.
+- [ ] Tor core: wire start/stop (tor on 9050) into the cores loader. Document clearly that Tor exits are bad for Google/AI scores.
+- [ ] Geph core: BLOCKED (see table). No installer until a prebuilt binary is verified.
+- [ ] Arman VPN core: implement from the verified research (server variant, SOCKS5 127.0.0.1:10810, panel 10820). Replace the v2.1 stub. Needs his Firefox sign-in + backup move first — no token/credential in this repo.
+- [ ] Force DNS, full version: per-egress DoH forwarder with **dnscrypt-proxy** (the only candidate with a native SOCKS5 upstream: `proxy = 'socks5://…'`, `force_tcp = true`; dnsproxy has no SOCKS flag, cloudflared `proxy-dns` was removed, CoreDNS forward has no SOCKS option, socat 1.x has no SOCKS5). One process per egress, own toml + listen port (5353+). This is also what finally removes the bootstrap allow-list from the scoped port-53 block. Open: bootstrap-lookup path needs a tcpdump test.
+- [ ] Per-core health checks (latency + DNSBL) for WARP/Tor/Geph/Arman, same format as the Psiphon one.
 
 ## Phase 5 — Multi-country Psiphon + Xray (separate reviewed step)
-- [ ] Psiphon instances for DE / NL / SE / US (menu 3 → 1 already supports
-  any allowed code; this phase is about choosing and verifying them).
-- [ ] Xray outbounds patch: add `Psiphon-DE` / `Psiphon-NL` / `Psiphon-SE` /
-  `Psiphon-US` outbounds + routing rules, blackhole UDP/STUN on proxy
-  inbounds, route DNS through the proxy outbound. This touches the server
-  config — it lands as its own reviewed step, NOT inside this PR.
-- [ ] A/B test the countries against IPFighter and keep the best two
-  (one European, one Asian) as the defaults.
+
+### Suggested cores per service (from `services.yaml` + research)
+| Service | First choice | Second choice | Why |
+|---|---|---|---|
+| Gemini | Psiphon DE / NL / SE | Psiphon SG | EU exits are in Gemini's 150+ supported countries, lowest ping from the server. |
+| Qwen | Any clean core | Psiphon SG / JP / DE | Least picky; international API works from US/EU IPs without a proxy. |
+| Muse (muse.ai) | WARP core | Clean Psiphon DE / NL | Cloudflare-fronted: WARP (Cloudflare IPs) least flagged. Note: his muse.ai failure was a local Chrome extension block, not the IP. |
+| Google Flow | Psiphon DE / NL / SE + AI Flow Bypasser extension in the browser | — | The extension flips Flow's country boolean client-side; the IP only needs to be a supported country. |
+| ChatGPT / Claude | Psiphon US, then DE / NL | WARP | US first for feature availability, but more CAPTCHAs. |
+
+### Remaining problems in Phase 5
+- [ ] Psiphon instances for DE / NL / SE / US (menu 3 → 1 already supports any allowed code; this phase is about choosing and verifying them). Asian backup: SG.
+- [ ] Xray outbounds patch: add `Psiphon-DE` / `Psiphon-NL` / `Psiphon-SE` / `Psiphon-US` outbounds + routing rules, blackhole UDP/STUN on proxy inbounds, route DNS through the proxy outbound. This touches the server config — it lands as its own reviewed step, NOT inside this PR. TO-CONFIRM: real inbound tags, and the `"3478,5349,19302"` port-list form (validate with `xray run -test`). Also fix the lying `Psiphon-SE` tag: 1081 is really CZ.
+- [ ] A/B test the countries against IPFighter and keep the best two (one European, one Asian) as the defaults.
+- [ ] Rank countries by measured latency + blacklist + score instead of guessing: log health-check results per country and sort by them. (Moved here from Phase 3 — it needs the multi-country instances first.)
 
 ## Phase 6 — Telegram bot + Mini App control plane (DESIGN ONLY — not built)
 Hamidr's request, designed here so the build has a fixed target. No bot
