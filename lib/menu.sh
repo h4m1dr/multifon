@@ -2,8 +2,8 @@
 # multifon v2 — lib/menu.sh
 # Menus + main loop + PATH install (bug #4).
 # Menu numbers 1–4 are the same as v1; 5–9 are the new v2 sections.
-# v2.3: main menu 2 is the systemd-units entry (Firejail is gone); the
-# folder submenu lost its "no Firejail" item (2) and renumbered 3–10 -> 2–9.
+# v2.3: main menu 2 is the systemd-units entry; the
+# folder submenu lost its old item (2) and renumbered 3–10 -> 2–9.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_MENU_LOADED:-}" ]] && return 0
@@ -14,7 +14,7 @@ main_menu() {
     echo -e "${YELLOW}Main Menu:${RESET}"
     echo ""
     echo -e "${BLUE} 1) Psiphon Installation Menu ${YELLOW}#Source: SpherionOS${RESET}"
-    echo -e "${BLUE} 2) Systemd units ${YELLOW}(per-instance units + Firejail removal)${RESET}"
+    echo -e "${BLUE} 2) Systemd units ${YELLOW}(per-instance units)${RESET}"
     echo ""
     echo -e "${BLUE} 3) Psiphon Folder Management${RESET}"
     echo -e "${BLUE} 4) Cleanup Options${RESET}"
@@ -102,14 +102,14 @@ cleanup_menu() {
         echo -e "${YELLOW}Cleanup Options:${RESET}"
         echo ""
         echo -e "${BLUE} 1) Delete Psiphon Folders (select or ALL)${RESET}"
-        echo -e "${BLUE} 2) Remove Firejail leftovers ${WHITE}(apt purge + autoremove ~1 GB)${RESET}"
+        echo -e "${BLUE} 2) Clean slate — delete EVERYTHING ${RED}(nuke: instances, units, users, rules, wrapper)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
         read -rp "Select an option [0-2]: " clean_option
         case $clean_option in
             1) delete_psiphon_folders ;;
-            2) systemd_remove_firejail; info_write_system; pause ;;
+            2) multifon_nuke; info_write_system; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac
@@ -268,6 +268,14 @@ install_multifon_command() {
         echo -e "${YELLOW}'multifon' is installed but /usr/local/bin is not in your PATH.${RESET}"
         echo -e "${YELLOW}Add this to ~/.bashrc: export PATH=\"\$PATH:/usr/local/bin\"${RESET}"
     fi
+    # v2.3.1: actually verify it runs from another directory — `command -v`
+    # only proves PATH, not that the script finds its lib/ (the old bug:
+    # dirname of the symlink gave /usr/local/bin).
+    if (cd /tmp && multifon status >/dev/null 2>&1); then
+        echo -e "${GREEN}Verified: 'multifon status' works from /tmp.${RESET}"
+    else
+        echo -e "${RED}Installed, but 'multifon' does NOT run from /tmp — check the symlink: ls -l /usr/local/bin/multifon${RESET}"
+    fi
     pause
 }
 
@@ -281,13 +289,15 @@ updates_menu() {
         echo ""
         echo -e "${BLUE} 1) Update Psiphon core ${WHITE}(pinned ${PSIPHON_PINNED_VERSION}; refreshes every instance copy)${RESET}"
         echo -e "${BLUE} 2) Check upstream versions ${WHITE}(pinned vs latest — read-only)${RESET}"
+        echo -e "${BLUE} 3) Repair instance binaries ${WHITE}(re-copy the verified core into every instance)${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-2]: " upd_opt
+        read -rp "Select an option [0-3]: " upd_opt
         case $upd_opt in
             1) update_psiphon_core; pause ;;
             2) check_upstream_versions; pause ;;
+            3) repair_instance_binaries; pause ;;
             0) return ;;
             *) echo -e "${RED}Invalid option.${RESET}"; pause ;;
         esac

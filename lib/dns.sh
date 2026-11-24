@@ -39,9 +39,11 @@ dns_doh_query() {
 # Leak check for one SOCKS port.
 #  1) DoH through the proxy must answer (DNS-via-tunnel works).
 #  2) Direct UDP/53 must NOT answer (otherwise DNS can bypass the proxy).
-# Usage: dns_leak_check <socks-port>
+# Usage: dns_leak_check <socks-port> [instance-dir]
+# The instance dir selects the probe user: each instance is probed as
+# ITS OWN user (multifon-<cc>), never as another instance's user.
 dns_leak_check() {
-    local socks="$1" ans
+    local socks="$1" dir="${2:-}" ans
     [[ "$socks" =~ ^[0-9]+$ ]] || { echo -e "${RED}Bad SOCKS port: $socks${RESET}"; return 1; }
     echo -e "${YELLOW}DNS leak check for SOCKS 127.0.0.1:$socks${RESET}"
 
@@ -65,7 +67,13 @@ dns_leak_check() {
     # succeeds locally even when the packet is dropped — so dig is used.)
     if command -v dig >/dev/null 2>&1; then
         local probe_cmd="dig" probe_user=""
-        probe_user=$(systemd_first_instance_user || true)
+        if [[ -n "$dir" ]]; then
+            probe_user=$(systemd_instance_user "$dir" 2>/dev/null || true)
+            if [[ -n "$probe_user" ]] && ! id -u "$probe_user" >/dev/null 2>&1; then
+                probe_user=""
+            fi
+        fi
+        [[ -z "$probe_user" ]] && probe_user=$(systemd_first_instance_user || true)
         if [[ -n "$probe_user" ]]; then
             probe_cmd="sudo -u $probe_user dig"
             echo -e " Probing as instance user $probe_user (group $SANDBOX_GROUP — the gid the scoped rules match)."
@@ -95,14 +103,22 @@ dns_leak_check() {
     echo -e " STUN firewall block: $(stun_block_status)"
 }
 
-# Leak check for every running instance.
+# Leak check for every RUNNING instance (v2.3.1: a stopped instance
+# has no proxy to leak through and no DoH to fail — checking it only
+# produces false alarms ("DoH FAILED", "LEAK PATH OPEN"). It is skipped
+# with a plain "not running" line instead.
 dns_leak_check_all() {
     local any=0
     while IFS= read -r d; do
         any=1
         read -r _hp sp < <(instance_ports "$d")
         echo -e "${CYAN}$(basename "$d"):${RESET}"
-        dns_leak_check "$sp" || true
+        if ! psiphon_live_pid "$d" >/dev/null 2>&1; then
+            echo -e " ${YELLOW}not running — start it first (menu 3 -> 3). Skipping leak check.${RESET}"
+            echo ""
+            continue
+        fi
+        dns_leak_check "$sp" "$d" || true
         echo ""
     done < <(psiphon_dirs)
     [ "$any" -eq 0 ] && echo -e "${RED}No psiphon-* locations found.${RESET}"
@@ -217,6 +233,12 @@ dns_forwarder_install() {
         echo "Aborted."
         return 1
     fi
+    # NOTE (known packaging warning, not a multifon bug): on this box
+    # apt prints "Could not execute systemctl: at
+    # /usr/bin/deb-systemd-invoke line 148." while configuring the
+    # package. The package still installs fine — the postinst cannot
+    # talk to systemd from the apt context. No action needed; do not
+    # try to "fix" apt/dpkg behaviour here.
     if sudo apt update && sudo apt install -y dnscrypt-proxy; then
         if command -v dnscrypt-proxy >/dev/null 2>&1; then
             echo -e "${GREEN}dnscrypt-proxy installed.${RESET}"
@@ -323,22 +345,27 @@ dns_forwarder_status() {
 # (10810) when their SOCKS ports are listening.
 dns_forwarder_start_all() {
     dns_forwarder_install || return 1
-    local d sp name spec
+    local d sp name spec started=0 skipped=0
     while IFS= read -r d; do
         read -r _hp sp < <(instance_ports "$d")
         [[ "$sp" =~ ^[0-9]+$ ]] || continue
         if ! psiphon_live_pid "$d" >/dev/null 2>&1; then
             echo -e "${YELLOW}$(basename "$d") is not running — skipping its forwarder.${RESET}"
+            skipped=$((skipped + 1))
             continue
         fi
-        dns_forwarder_start "$sp" "" "$(basename "$d")" || true
+        dns_forwarder_start "$sp" "" "$(basename "$d")" && started=$((started + 1)) || true
     done < <(psiphon_dirs)
     for spec in "warp:1091" "tor:9050" "arman:10810"; do
         name="${spec%%:*}"; sp="${spec##*:}"
         if port_in_use "$sp"; then
-            dns_forwarder_start "$sp" "" "$name" || true
+            dns_forwarder_start "$sp" "" "$name" && started=$((started + 1)) || true
         fi
     done
+    if [[ "$started" -eq 0 ]]; then
+        echo ""
+        echo -e "${YELLOW}No running egresses — start the instances first (menu 3 -> 3), then run this again.${RESET}"
+    fi
     echo ""
     echo -e "${YELLOW}Bootstrap-lookup check (still needs a tcpdump test on the server):${RESET}"
     echo -e "  dig @127.0.0.1 -p <listen> example.com   # must answer"

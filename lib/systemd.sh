@@ -1,15 +1,16 @@
 #!/bin/bash
 # multifon v2.3 — lib/systemd.sh
-# systemd sandbox: one unit per Psiphon instance. REPLACES Firejail.
+# systemd sandbox: one unit per Psiphon instance.
 #
-# Why Firejail is gone: `apt install firejail` pulled ~1 GB of Recommends
-# (xpra + the GTK/GL dev stack) for a 1.6 MB sandbox, and Firejail is a
-# setuid-root binary with a long CVE history. What Firejail actually did
-# for multifon was three things, and systemd does all three natively:
-#   1) per-instance private filesystem — Firejail --private=<dir> gave
-#      each instance its own state dir, so Psiphon counted them as
-#      separate clients and gave separate exit IPs (shared data dir =
-#      one client = one exit IP; that is why Firejail was installed).
+# Why systemd units: the previous sandbox needed an extra package that
+# pulled ~1 GB of Recommends (xpra + the GTK/GL dev stack) for a 1.6 MB
+# sandbox, and was a setuid-root binary with a long CVE history. What the
+# sandbox actually did for multifon was three things, and systemd does
+# all three natively:
+#   1) per-instance private filesystem — the old sandbox gave each
+#      instance its own state dir via a private mount, so Psiphon counted
+#      them as separate clients and gave separate exit IPs (shared data
+#      dir = one client = one exit IP; that is why a sandbox was needed).
 #      systemd replaces the mount namespace with Unix permissions:
 #      each instance runs as its own system user (multifon-<cc>) and
 #      its folder is mode 700 owned by that user, so instances cannot
@@ -24,10 +25,10 @@
 #      timezone IPFighter reads.
 #
 # What systemd ALSO fixes: process tracking. The old launchers recorded
-# a pidfile (psiphon.firejail.pid) that went stale whenever an instance
-# was stopped by hand — the pidfile-desync bug class (#5). A unit is
-# tracked by systemd itself: start/stop/restart/status/is-active, logs
-# in the journal + log.txt, Restart=on-failure. No pidfiles anywhere.
+# a pidfile that went stale whenever an instance was stopped by hand —
+# the pidfile-desync bug class (#5). A unit is tracked by systemd
+# itself: start/stop/restart/status/is-active, logs in the journal +
+# log.txt, Restart=on-failure. No pidfiles anywhere.
 #
 # BASE DIR / TRAVERSAL — read this before wondering why a unit cannot
 # start: instances live under $PSIPHON_BASE_DIR/psiphon/ (v1: $HOME,
@@ -52,7 +53,7 @@
 #
 # The old oneshot autostart service (multifon-psiphon.service, which
 # ran start-psiphons.sh) is dead in v2.3 — per-instance units replace
-# it, and systemd_units_sync / systemd_remove_firejail remove it.
+# it, and systemd_units_sync removes it.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_SYSTEMD_LOADED:-}" ]] && return 0
@@ -156,7 +157,7 @@ systemd_user_ensure() {
 # enabled afterwards. Does NOT start the unit — callers decide that.
 # Returns 1 when the instance binary is missing.
 systemd_unit_write() {
-    local d="$1" bn cc user tz zi unit tmp bin
+    local d="$1" bn cc user tz zi unit tmp bin _verify_out
     bn="$(basename "$d")"
     cc="${bn#psiphon-}"; cc="${cc^^}"
     user=$(systemd_instance_user "$d")
@@ -164,6 +165,8 @@ systemd_unit_write() {
     unit="$SYSTEMD_UNIT_DIR/$(systemd_unit_name "$d")"
 
     # The binary must be the x86_64 one; keep the v1 rename fallback.
+    # v2.3.1: -x alone is not enough — a 90-byte wrapper script is also
+    # +x, and it exits 127 in the unit forever. Verify ELF + size.
     bin="$d/psiphon-tunnel-core-x86_64"
     if [[ ! -x "$bin" ]]; then
         if [[ -f "$d/psiphon-tunnel-core" ]]; then
@@ -174,6 +177,13 @@ systemd_unit_write() {
             return 1
         fi
     fi
+    # Capture the output: on success verify prints the SHA (noise here),
+    # on failure it prints the reason — show it only then.
+    if ! _verify_out=$(psiphon_verify_instance_binary "$bin" 2>&1); then
+        echo "$_verify_out"
+        echo -e "${RED}Bad binary in $d — not a real core (see above). Delete the instance and recreate it after getting a real binary (menu 10 -> 1).${RESET}"
+        return 1
+    fi
 
     tmp=$(mktemp) || return 1
     {
@@ -181,6 +191,13 @@ systemd_unit_write() {
         printf 'Description=multifon Psiphon instance %s (egress %s)\n' "$bn" "$cc"
         printf '%s\n' "After=network-online.target"
         printf '%s\n' "Wants=network-online.target"
+        # Restart-loop protection (v2.3.1): Restart=on-failure +
+        # RestartSec=5 alone restarts forever — the default burst limit
+        # (5 restarts in 10s) is never hit because restarts are 5s apart
+        # (a broken 90-byte binary hit restart #102 in ~8 min). 5 failures
+        # in 5 min -> the unit goes failed and STOPS, instead of looping.
+        printf '%s\n' "StartLimitIntervalSec=300"
+        printf '%s\n' "StartLimitBurst=5"
         printf '%s\n' ""
         printf '%s\n' "[Service]"
         printf '%s\n' "Type=simple"
@@ -239,15 +256,85 @@ systemd_unit_is_active() {
     systemctl is-active --quiet "$1" 2>/dev/null
 }
 
+# systemd_instance_preflight <dir> — refuse to start an instance whose
+# binary is not a real core or whose config is missing/broken. A start
+# that would exit 127 (or crash on a bad config) is reported HERE,
+# instead of letting the unit fail and restart forever.
+systemd_instance_preflight() {
+    local d="$1" bin _verify_out
+    bin="$d/psiphon-tunnel-core-x86_64"
+    if [[ ! -f "$bin" ]]; then
+        echo -e "${RED}$(basename "$d"): no binary in $d — cannot start. Delete and recreate it (menu 3 -> 1) after getting a real core (menu 10 -> 1).${RESET}"
+        return 1
+    fi
+    if ! _verify_out=$(psiphon_verify_instance_binary "$bin" 2>&1); then
+        echo "$_verify_out"
+        echo -e "${RED}$(basename "$d"): bad binary in $d — not a real core (see above). Delete the instance and recreate it after getting a real binary (menu 10 -> 1).${RESET}"
+        return 1
+    fi
+    if [[ ! -f "$d/config.json" ]]; then
+        echo -e "${RED}$(basename "$d"): config.json is missing in $d — cannot start.${RESET}"
+        return 1
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$d/config.json" 2>/dev/null; then
+            echo -e "${RED}$(basename "$d"): config.json does not parse as JSON — cannot start.${RESET}"
+            return 1
+        fi
+    elif command -v jq >/dev/null 2>&1; then
+        if ! jq -e . "$d/config.json" >/dev/null 2>&1; then
+            echo -e "${RED}$(basename "$d"): config.json does not parse as JSON — cannot start.${RESET}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# systemd_unit_state <unit> — RUNNING / FAILED (<result>) /
+# RESTART-LOOP (restart #N) / STARTING / STOPPED / NO UNIT.
+# is-active alone cannot tell a failed unit from a stopped one, and a
+# unit in "activating (auto-restart)" is NOT stopped — it is looping.
+systemd_unit_state() {
+    local unit="$1" active sub result restarts load
+    load=$(systemctl show -p LoadState --value "$unit" 2>/dev/null || echo unknown)
+    [[ "$load" == "loaded" ]] || { echo "NO UNIT"; return 0; }
+    active=$(systemctl show -p ActiveState --value "$unit" 2>/dev/null || echo unknown)
+    sub=$(systemctl show -p SubState --value "$unit" 2>/dev/null || true)
+    result=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)
+    restarts=$(systemctl show -p NRestarts --value "$unit" 2>/dev/null || echo 0)
+    case "$active" in
+        active) echo "RUNNING" ;;
+        failed) echo "FAILED${result:+ ($result)}" ;;
+        activating)
+            if [[ "$sub" == "auto-restart" ]]; then
+                echo "RESTART-LOOP (restart #${restarts:-?})"
+            else
+                echo "STARTING"
+            fi
+            ;;
+        *) echo "STOPPED" ;;
+    esac
+}
+
 # systemd_instance_start <dir> — start the unit (restart if already active,
 # so a "launch" always gives a fresh process — the rotate_ip semantics).
+# v2.3.1: the systemctl error is PRINTED (the old code swallowed stderr,
+# so a failed start looked identical to a successful one), and the unit
+# is verified to have stayed up afterwards — `systemctl start` reports
+# success as soon as the process forks, even if it exits immediately.
 systemd_instance_start() {
-    local d="$1" unit
+    local d="$1" unit out
     unit=$(systemd_unit_name "$d")
+    systemd_instance_preflight "$d" || return 1
     if systemd_unit_is_active "$unit"; then
-        sudo systemctl restart "$unit" 2>/dev/null || systemctl restart "$unit" 2>/dev/null || return 1
+        out=$(sudo systemctl restart "$unit" 2>&1 || systemctl restart "$unit" 2>&1) || { echo -e "${RED}Could not restart $(basename "$d") ($unit):${RESET}"; echo "$out" | tail -n 5; return 1; }
     else
-        sudo systemctl start "$unit" 2>/dev/null || systemctl start "$unit" 2>/dev/null || return 1
+        out=$(sudo systemctl start "$unit" 2>&1 || systemctl start "$unit" 2>&1) || { echo -e "${RED}Could not start $(basename "$d") ($unit):${RESET}"; echo "$out" | tail -n 5; return 1; }
+    fi
+    sleep 1
+    if ! systemd_unit_is_active "$unit"; then
+        echo -e "${RED}$(basename "$d") did not stay up ($unit): state $(systemd_unit_state "$unit") — check: systemctl status $unit; journalctl -u $unit -n 30${RESET}"
+        return 1
     fi
 }
 
@@ -301,14 +388,14 @@ systemd_unit_remove() {
 #    never start a stopped instance on its own)
 #  - units whose folder is gone are removed (with their user)
 #  - stale v2.2 artefacts are removed: start-psiphons.sh, per-instance
-#    start.sh, psiphon.firejail.pid files
+#    start.sh files
 #  - the dead oneshot autostart service is disabled + removed
 systemd_units_sync() {
     local d unit base
     # 1) units for existing folders
     while IFS= read -r d; do
         systemd_unit_ensure "$d" || echo -e "${YELLOW}Could not ensure the unit for $(basename "$d").${RESET}"
-        rm -f "$d/start.sh" "$d/psiphon.firejail.pid"
+        rm -f "$d/start.sh"
     done < <(psiphon_dirs)
     # 2) units whose folder is gone (unit multifon-psiphon-cz.service
     #    belongs to folder psiphon-cz — strip the multifon- prefix)
@@ -339,16 +426,22 @@ systemd_units_sync() {
 # systemd_units_status — one line per instance: unit state + live pid.
 systemd_units_status() {
     echo -e "${YELLOW}Psiphon instances (systemd units):${RESET}"
-    local any=0 d unit st pid
+    local any=0 d unit st pid state
     while IFS= read -r d; do
         any=1
         unit=$(systemd_unit_name "$d")
         read -r _hp sp < <(instance_ports "$d")
-        if systemd_unit_is_active "$unit"; then
-            st="${GREEN}RUNNING${RESET}"
-        else
-            st="${RED}STOPPED${RESET}"
-        fi
+        # v2.3.1: a failed unit and a restart-looping unit are NOT
+        # "STOPPED" — show them as what they are, or the failure is
+        # invisible in the menu (that is how the 90-byte binary hid).
+        state=$(systemd_unit_state "$unit")
+        case "$state" in
+            RUNNING) st="${GREEN}RUNNING${RESET}" ;;
+            FAILED*|RESTART-LOOP*) st="${RED}$state${RESET}" ;;
+            "NO UNIT") st="${YELLOW}NO UNIT${RESET}" ;;
+            STARTING) st="${YELLOW}STARTING${RESET}" ;;
+            *) st="${RED}STOPPED${RESET}" ;;
+        esac
         pid=$(psiphon_live_pid "$d" 2>/dev/null || true)
         if [[ -n "$pid" ]]; then
             echo -e " $st  $(basename "$d")  ${WHITE}(HTTP:$_hp SOCKS:$sp, pid $pid, $unit)${RESET}"
@@ -370,110 +463,24 @@ systemd_units_summary() {
     printf '%s total, %s active' "$total" "$active"
 }
 
-# --- One-time Firejail removal + migration ----------------------------------
-# systemd_remove_firejail — the v2.3 migration, run once from menu 2
-# (or menu 4 -> 2 / menu 10 -> 2):
-#  1) stop any firejail psiphon processes still running (clean slate on
-#     hamidr's server: none — but the code must be correct in general)
-#  2) disable + remove the dead oneshot autostart service
-#  3) purge the firejail + firejail-profiles packages
-#  4) show the `apt autoremove --dry-run` list first, confirm, then
-#     `apt autoremove --purge` — that is what frees the ~1 GB of
-#     Recommends junk (xpra + GTK/GL dev stack) the v2.0 install pulled
-#  5) remove the stale v2.1 sandbox-uid marker (gid rules replace it)
-#  6) re-create every surviving instance folder as a systemd unit and
-#     start it
-# Prints disk space before/after so the freed ~1 GB is visible.
-systemd_remove_firejail() {
-    echo -e "${CYAN}${BOLD}Removing Firejail — the systemd units are the sandbox now.${RESET}"
-    echo ""
-    echo -e "${YELLOW}Disk before:${RESET}"
-    df -h / | tail -n1
-    echo ""
-
-    # 1) stop firejail psiphon processes (live-pid match, not the unit —
-    #    these processes predate the units)
-    local pid
-    for pid in $(pgrep -f "psiphon-tunnel-core" 2>/dev/null || true); do
-        if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "firejail"; then
-            echo -e "${YELLOW}Stopping firejail process $pid...${RESET}"
-            _kill_pid "$pid"
-        fi
-    done
-    # Any remaining core process with an instance folder as cwd.
-    local d
-    while IFS= read -r d; do
-        pid=$(psiphon_live_pid "$d" || true)
-        [[ -n "$pid" ]] && _kill_pid "$pid"
-        rm -f "$d/psiphon.firejail.pid" "$d/start.sh"
-    done < <(psiphon_dirs)
-
-    # 2) dead oneshot autostart service
-    if [[ -f "$SYSTEMD_UNIT_DIR/$LEGACY_AUTOSTART_UNIT" ]]; then
-        echo -e "${CYAN}Removing the old autostart service $LEGACY_AUTOSTART_UNIT...${RESET}"
-        sudo systemctl disable --now "$LEGACY_AUTOSTART_UNIT" >/dev/null 2>&1 || true
-        sudo rm -f "$SYSTEMD_UNIT_DIR/$LEGACY_AUTOSTART_UNIT"
-        sudo systemctl daemon-reload 2>/dev/null || true
-    fi
-    rm -f "$PSIPHON_BASE_DIR/psiphon/start-psiphons.sh"
-
-    # 3) purge the packages (best-effort if already gone)
-    if command -v firejail >/dev/null 2>&1 || dpkg -l firejail 2>/dev/null | grep -q '^ii'; then
-        echo -e "${CYAN}Purging firejail + firejail-profiles...${RESET}"
-        sudo apt purge -y firejail firejail-profiles || echo -e "${YELLOW}apt purge had an issue — continuing anyway.${RESET}"
-    else
-        echo -e "${GREEN}Firejail is already gone.${RESET}"
-    fi
-
-    # 4) autoremove the ~1 GB of Recommends junk — dry-run first.
-    echo ""
-    echo -e "${YELLOW}These packages would be autoremoved (the xpra + GTK/GL stack Firejail dragged in):${RESET}"
-    sudo apt autoremove --dry-run 2>/dev/null | sed -n '/will be REMOVED/,/^$/p' | head -n 20
-    echo ""
-    if confirm_yes "Run apt autoremove --purge now (frees ~1 GB)?"; then
-        sudo apt autoremove --purge -y || echo -e "${YELLOW}autoremove had an issue — check apt output above.${RESET}"
-    else
-        echo -e "${YELLOW}Skipped autoremove — the junk stays until you run it (sudo apt autoremove --purge).${RESET}"
-    fi
-
-    # 5) stale v2.1 marker (gid rules replace the uid rules)
-    rm -f "$SANDBOX_UID_FILE_LEGACY"
-
-    # 6) re-create surviving folders as systemd units and start them
-    echo ""
-    echo -e "${CYAN}Re-creating surviving instances as systemd units...${RESET}"
-    while IFS= read -r d; do
-        echo -e " $(basename "$d")..."
-        systemd_instance_apply "$d" || echo -e "${RED}Could not start $(basename "$d") — check: systemctl status $(systemd_unit_name "$d")${RESET}"
-    done < <(psiphon_dirs)
-
-    echo ""
-    echo -e "${YELLOW}Disk after:${RESET}"
-    df -h / | tail -n1
-    echo ""
-    echo -e "${GREEN}Firejail removal done. Sandbox is systemd units now — check with menu 3 -> 2.${RESET}"
-}
-
 # systemd_menu — main menu 2: the sandbox entry.
 systemd_menu() {
     while true; do
         clear
         logo
         check_status
-        echo -e "${YELLOW}Sandbox — systemd units (Firejail was removed in v2.3):${RESET}"
+        echo -e "${YELLOW}Sandbox — systemd units:${RESET}"
         systemd_units_status
         echo ""
         echo -e "${BLUE} 1) Re-sync all units ${WHITE}(create missing units/users, remove orphans)${RESET}"
-        echo -e "${BLUE} 2) Remove Firejail + free ~1 GB ${WHITE}(one-time migration, dry-run first)${RESET}"
-        echo -e "${BLUE} 3) Show one unit file${RESET}"
+        echo -e "${BLUE} 2) Show one unit file${RESET}"
         echo ""
         echo -e "${BLUE} 0) Back to Main Menu${RESET}"
         echo ""
-        read -rp "Select an option [0-3]: " sd_opt
+        read -rp "Select an option [0-2]: " sd_opt
         case $sd_opt in
             1) systemd_units_sync; pause ;;
-            2) systemd_remove_firejail; pause ;;
-            3)
+            2)
                 d=$(select_psiphon_dir "Show the unit for which location?" || true)
                 if [[ -n "$d" ]]; then
                     sudo cat "$SYSTEMD_UNIT_DIR/$(systemd_unit_name "$d")" 2>/dev/null \
