@@ -80,16 +80,23 @@ gone); `multifon start-all` / `stop-all` / `status` work from the CLI.
 
 ## 🚀 Installation
 
+One-time install — no `cd` at all, `multifon` runs from anywhere afterwards:
+
 ```bash
 git clone https://github.com/h4m1dr/multifon.git
-cd multifon
-bash multifon.sh
+bash multifon/multifon.sh install
 ```
 
-Or install the `multifon` command on PATH (menu 9), then run it from anywhere:
+Then run it from any directory:
 
 ```bash
 multifon
+```
+
+Or open the menu directly (also without `cd`):
+
+```bash
+bash multifon/multifon.sh
 ```
 
 Or run the fixer directly (no menu):
