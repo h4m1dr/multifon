@@ -4,7 +4,7 @@
 # delete (canonical cleanup path), rotate IP.
 # Sandboxing is systemd units (lib/systemd.sh), one unit per instance:
 #   multifon-psiphon-<cc>.service (User=multifon-<cc>, Group=multifon)
-# Firejail is gone in v2.3 — see lib/systemd.sh for why.
+# v2.3: systemd units are the sandbox — see lib/systemd.sh.
 # Sourced by multifon.sh; never run directly.
 
 [[ -n "${_MULTIFON_PSIPHON_LOADED:-}" ]] && return 0
@@ -160,10 +160,18 @@ repair_instance_binaries() {
     return 0
 }
 
+# psiphon_core_installed — true when a VERIFIED real core exists at the
+# canonical path. /usr/bin/psiphon is the SpherionOS launcher wrapper
+# (90 bytes, not an ELF binary) — it is NOT a core and must never count
+# as "installed" or be copied as one.
+psiphon_core_installed() {
+    _core_file_ok_quiet "/usr/bin/psiphon-tunnel-core-x86_64"
+}
+
 # 1) Psiphon Installation Menu
 install_psiphon_menu() {
     local installed="No"
-    if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+    if psiphon_core_installed; then
         installed="Yes"
     fi
 
@@ -188,8 +196,11 @@ install_psiphon_menu() {
         read -p "Select an option [0-6]: " ps_opt
         case "$ps_opt" in
             1)
-                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-                    echo -e "${YELLOW}Psiphon is already installed. Skipping installation.${RESET}"
+                if psiphon_core_installed; then
+                    echo -e "${YELLOW}Psiphon core is already installed. Skipping installation.${RESET}"
+                elif [[ -x "/usr/bin/psiphon" ]]; then
+                    echo -e "${YELLOW}Only the broken SpherionOS wrapper is present (/usr/bin/psiphon, 90 bytes) — the installer that made it is not run again.${RESET}"
+                    echo -e "${YELLOW}Use option 3 (or menu 10 -> 1) to download the real pinned core instead.${RESET}"
                 else
                     if [[ -f ./plinstaller2 ]]; then
                         echo -e "${BLUE}Found existing plinstaller2, using local copy...${RESET}"
@@ -203,8 +214,11 @@ install_psiphon_menu() {
                 pause
                 ;;
             2)
-                if [[ -x "/usr/bin/psiphon" ]] || [[ -f "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
-                    echo -e "${YELLOW}Psiphon is already installed. Manual install skipped.${RESET}"
+                if psiphon_core_installed; then
+                    echo -e "${YELLOW}Psiphon core is already installed. Manual install skipped.${RESET}"
+                elif [[ -x "/usr/bin/psiphon" ]]; then
+                    echo -e "${YELLOW}Only the broken SpherionOS wrapper is present (/usr/bin/psiphon, 90 bytes).${RESET}"
+                    echo -e "${YELLOW}Use option 3 (or menu 10 -> 1) to download the real pinned core instead.${RESET}"
                 else
                     echo -e "${BLUE}Running manual installation...${RESET}"
                     git clone https://github.com/SpherionOS/PsiphonLinux.git ~/PsiphonLinux && \
@@ -312,6 +326,13 @@ update_psiphon_core() {
     if ! wget -q -O "$temp_file" "$PSIPHON_BIN_URL"; then
         echo -e "${RED}Download failed (${PSIPHON_BIN_URL}).${RESET}"
         rm -f "$temp_file"
+        # v2.3.1 fallback: if a verified core is already installed (e.g.
+        # hand-installed), repair from it instead of failing outright.
+        if _core_file_ok_quiet "/usr/bin/psiphon-tunnel-core-x86_64"; then
+            echo -e "${YELLOW}Falling back to the already-installed verified core — re-copying it into the instances.${RESET}"
+            repair_instance_binaries
+            return $?
+        fi
         return 1
     fi
     new_sha="$(psiphon_verify_binary "$temp_file" || true)"
@@ -381,7 +402,7 @@ update_psiphon_core() {
 
 # check_upstream_versions: read-only report — pinned version vs the latest
 # upstream release tag (GitHub API). Never changes anything.
-# (Firejail was removed in v2.3, so there is no Firejail version to report.)
+# (systemd units are the sandbox, so there is no sandbox package version to report.)
 check_upstream_versions() {
     echo -e "${YELLOW}Upstream versions:${RESET}"
     echo -e " Psiphon core pinned here: ${PSIPHON_PINNED_VERSION}"
@@ -399,7 +420,7 @@ check_upstream_versions() {
     else
         echo -e " Psiphon core latest upstream: ${YELLOW}could not reach the GitHub API${RESET}"
     fi
-    echo -e " Sandbox: systemd units (Firejail was removed in v2.3)"
+    echo -e " Sandbox: systemd units"
 }
 
 # Refresh the global used_ports list from registry + existing configs.
@@ -430,12 +451,14 @@ _create_single_location() {
     # never copied.
     local core_src=""
     local p p_size
-    for p in "/etc/psiphon/psiphon-tunnel-core-x86_64" \
+    # Order matters: the canonical verified install first. /usr/bin/psiphon
+    # is DELIBERATELY NOT a candidate — it is the SpherionOS launcher
+    # wrapper, never a core binary (see repair_instance_binaries).
+    for p in "/usr/bin/psiphon-tunnel-core-x86_64" \
+             "/etc/psiphon/psiphon-tunnel-core-x86_64" \
              "/etc/psiphon/psiphon-tunnel-core" \
              "$PSIPHON_BASE_DIR/psiphon-tunnel-core-x86_64" \
-             "$PSIPHON_BASE_DIR/psiphon-tunnel-core" \
-             "/usr/bin/psiphon-tunnel-core-x86_64" \
-             "/usr/bin/psiphon"; do
+             "$PSIPHON_BASE_DIR/psiphon-tunnel-core"; do
         if [[ -x "$p" ]] && _core_file_ok_quiet "$p"; then
             core_src="$p"
             break
@@ -494,8 +517,8 @@ _create_single_location() {
     # sandbox: own user + 700 folder (private filesystem, so Psiphon sees
     # each instance as a separate client), TZ from egress_timezone, and
     # systemd tracks the process (no pidfile to go stale). Remove a stale
-    # start.sh / pidfile from v2.2 if one is lying around.
-    rm -f "$dir_path/start.sh" "$dir_path/psiphon.firejail.pid"
+    # start.sh from v2.2 if one is lying around.
+    rm -f "$dir_path/start.sh"
 
     # Save allocation into registry (idempotent per name)
     port_registry_set_entry "$name" "$http_port" "$socks_port"
@@ -706,7 +729,6 @@ show_running_psiphon() {
 stop_psiphon_in_dir() {
     local d="$1" pid=""
     systemd_instance_stop "$d"
-    rm -f "$d/psiphon.firejail.pid"
     pid=$(psiphon_live_pid "$d" || true)
     if [[ -n "$pid" ]]; then
         _kill_pid "$pid"

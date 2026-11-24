@@ -140,8 +140,9 @@ firewall_list() {
 # runs as root — none of them match, so they keep working.
 # Why not the alternatives: a server-wide OUTPUT rule breaks Xray (see
 # above); a per-uid rule set would need one rule per instance user and
-# would rot whenever an instance is added or deleted; firejail
-# --netfilter is gone with Firejail itself (v2.3).
+# would rot whenever an instance is added or deleted; the old
+# per-sandbox netfilter approach is gone (systemd units + gid-owner
+# rules replaced it in v2.3).
 #
 # One deliberate exception — the bootstrap allow-list: the Psiphon core
 # itself needs DNS to fetch its remote server list at startup, so the

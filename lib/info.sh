@@ -2,9 +2,9 @@
 # multifon v2 — lib/info.sh
 # INFO.txt registry: one "=== <name> ===" block per instance + a SYSTEM block.
 # Block format is unchanged from v1 (=== NAME === / key: value lines), but
-# v2.3 changed the KEYS: per-location StartScript/StartAllScript/Firejail
+# v2.3 changed the KEYS: per-location StartScript/StartAllScript
 # are replaced by Unit/User/Sandbox (systemd), and the SYSTEM block's
-# FirejailInstalled/StartAllScript/AutostartService by Sandbox/Units.
+# old sandbox/autostart keys by Sandbox/Units.
 # validate_info_file below prunes the old keys on the next run.
 # Sourced by multifon.sh; never run directly.
 
@@ -73,7 +73,7 @@ info_list_blocks() {
 
 # Write/refresh a LOCATION block (one per psiphon-XX folder)
 # v2.3: Unit/User/Sandbox replace the old StartScript/StartAllScript/
-# Firejail keys (no start.sh, no start-psiphons.sh, no Firejail any more).
+# sandbox keys (no start.sh, no start-psiphons.sh any more).
 info_write() {
   local name="$1" cc="$2" dir="$3" http="$4" socks="$5"
   local bin unit user files
@@ -105,10 +105,10 @@ info_write_system() {
   mkdir -p "$PSIPHON_BASE_DIR/psiphon"; [ -f "$INFO_FILE" ] || : > "$INFO_FILE"
 
   local psi="no" psi_path=""
-  if [[ -x "/usr/bin/psiphon" ]]; then
-    psi="yes"; psi_path="/usr/bin/psiphon"
-  elif [[ -x "/usr/bin/psiphon-tunnel-core-x86_64" ]]; then
+  if psiphon_core_installed; then
     psi="yes"; psi_path="/usr/bin/psiphon-tunnel-core-x86_64"
+  elif [[ -x "/usr/bin/psiphon" ]]; then
+    psi="no"; psi_path="/usr/bin/psiphon (broken wrapper — not a real core)"
   fi
 
   local loc_count units

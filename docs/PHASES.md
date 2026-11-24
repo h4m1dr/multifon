@@ -61,19 +61,61 @@ the real core (10,557,300 bytes, ELF 64-bit, statically linked).
   instances first" when nothing runs; the deb-systemd-invoke warning
   during the dnscrypt-proxy install is documented as a known packaging
   warning, not a bug.
+- [x] Repair is in the script now (the manual repair, scripted):
+  menu 10 -> 1 downloads the pinned core, verifies it (ELF + size),
+  installs it to `/usr/bin/psiphon-tunnel-core-x86_64` and re-copies it
+  into every instance dir with per-instance ownership; if the download
+  fails it falls back to the already-installed verified core. Menu
+  10 -> 3 re-copies the verified core on its own (`multifon
+  repair-core`); `multifon fix` / doctor sync repair automatically.
+- [x] Binary path corrected: the create source list prefers the
+  verified `/usr/bin/psiphon-tunnel-core-x86_64` and `/usr/bin/psiphon`
+  is NOT a candidate any more — it is the launcher wrapper, never a
+  core. "Installed" checks (status line, INFO.txt, install menu) now
+  mean "a verified real core exists"; a wrapper-only box reports that
+  plainly instead of "Installed".
+- [x] `multifon` works from any directory: the entrypoint resolves its
+  own symlink (menu 9 installs `/usr/local/bin/multifon` ->
+  `~/multifon/multifon.sh`; plain `dirname $0` used to give
+  `/usr/local/bin`, so lib/ was not found). Menu 9 now verifies it by
+  running `multifon status` from /tmp.
+- [x] Clean slate (`multifon_nuke`, menu 4 -> 2, `multifon nuke`):
+  prints exactly what it deletes and asks confirm_yes first — never
+  silent. Deletes instances + data (`/root/psiphon`), all units (+ the
+  dead oneshot autostart), all `multifon-<cc>` users (+ the old bare
+  `multifon` user) + group `multifon`, scoped gid-owner AND legacy
+  uid-owner/server-wide firewall rules (+ per-instance INPUT rules),
+  the DoH forwarders, the `/usr/bin/psiphon` wrapper, `/etc/psiphon`
+  leftovers, and the old sandbox package purge + autoremove (~1 GB,
+  dry-run shown first). KEEPS the verified core
+  `/usr/bin/psiphon-tunnel-core-x86_64`. NEVER deletes the `~/multifon`
+  checkout (the running script would delete itself) — that stays a
+  manual last step printed at the end (`rm -rf ~/multifon`, only after
+  `multifon` works from another directory).
+- [x] The old sandbox package is fully out of the code: the removal
+  function and both of its menu entries are deleted; the purge moved
+  into `multifon_nuke`. Code + menus contain no sandbox-package logic
+  any more (docs keep only the one historical line in the v2.3
+  section).
+- [x] Egress separation verified live 2026-11-24 ~05:03 Tehran:
+  nl 172.235.160.143, se 172.232.158.24, sg 139.59.119.126 — three
+  distinct foreign IPs, one per instance.
 Recovery on the server after merging this (hamidr already did the
 manual install): run `multifon fix` or Doctor -> 1 (repairs the three
 90-byte copies from the verified core), then menu 3 -> 3 (start-all)
 and check the units are RUNNING. Verify sizes: every instance
 `psiphon-tunnel-core-x86_64` must be 10,557,300 bytes.
+SEQUENCE — do NOT nuke before this lands: merge PR #5 (v2.3.1) ->
+pull on the server -> `multifon nuke` (menu 4 -> 2) -> recreate
+(menu 3 -> create NL/SE/SG as before, or the recommended DE/NL/SE/SG
+— menu choice, not hardcoded) -> menu 3 -> 3 (start-all). Nuking
+before the merge would leave nothing to rebuild with.
 
 ## v2.3 — systemd migration (on `codr1`, on top of v2.2)
-- [x] Firejail removed entirely. Why: `apt install firejail` pulled
-  ~1 GB of Recommends (xpra + the GTK/GL dev stack) for a 1.6 MB
-  sandbox, and Firejail is a setuid-root binary with a long CVE
-  history. What Firejail actually did was per-instance private
-  filesystem (`--private=<dir>`), so Psiphon counted each instance as
-  a separate client and gave separate exit IPs.
+- [x] Old sandbox replaced by systemd units in v2.3 (historical note:
+  v2.3 replaced the previous sandbox with systemd units). The old
+  sandbox gave each instance its own state dir, so Psiphon counted
+  each instance as a separate client and gave separate exit IPs.
 - [x] Per-instance system user + unit replaces it: `multifon-<cc>`
   (home = the instance dir, mode 700), all users in the shared group
   `multifon`; one unit `multifon-<cc>.service` per instance
@@ -96,22 +138,21 @@ and check the units are RUNNING. Verify sizes: every instance
   (server-wide) and v2.1 (uid-owner) rules. The DNS leak probe runs
   as the first instance user, not root. `lib/firewall.sh`,
   `lib/dns.sh`.
-- [x] Firejail removal path: menu 2 is the systemd-units entry
-  (re-sync units, show one unit file) and menu 4 → 2 / menu 10 → 2
-  run the one-time removal — stop firejail processes, purge the
-  package, show an `apt autoremove --purge` dry-run first and ask
-  before freeing the ~1 GB. Server step after merge: run menu 2 → 2
-  once (nothing to migrate — all old instances were deleted, clean
-  slate, 0 locations).
-- [x] Menu renumbering: folder submenu lost its "no Firejail" item
-  (old 2) — create is 1, status 2, start 3, stop 4, restart 5,
-  rotate 6, change region 7, health 8, country set 9. Main menu 2 is
-  the systemd-units entry; updates menu lost "Update Firejail".
+- [x] Sandbox migration path: menu 2 is the systemd-units entry
+  (re-sync units, show one unit file); the old sandbox package purge
+  + autoremove moved into the clean-slate function (menu 4 → 2,
+  `multifon nuke`) in v2.3.1. Server step after merge: pull v2.3.1,
+  then run the clean slate and recreate (nothing to migrate — all old
+  instances were deleted, clean slate, 0 locations).
+- [x] Menu renumbering: folder submenu lost its old item (old 2) —
+  create is 1, status 2, start 3, stop 4, restart 5, rotate 6, change
+  region 7, health 8, country set 9. Main menu 2 is the systemd-units
+  entry; updates menu lost its old sandbox updater.
 - [x] INFO.txt keys changed (same block format): per-location
-  `Unit:` / `User:` / `Sandbox: systemd` replace
-  `StartScript:` / `StartAllScript:` / `Firejail:`; SYSTEM block
-  `Sandbox:` / `Units:` replace `FirejailInstalled:` /
-  `StartAllScript:` / `AutostartService:`. `validate_info_file`
+  `Unit:` / `User:` / `Sandbox: systemd` replace the old
+  `StartScript:` / `StartAllScript:` / sandbox keys; SYSTEM block
+  `Sandbox:` / `Units:` replace the old sandbox / autostart keys.
+  `validate_info_file`
   prunes the old keys on the next run. `.allocated_ports` format
   unchanged. `lib/info.sh`, `lib/common.sh` (version 2.3.0).
 - [x] `cores.yaml` psiphon sandbox line updated to the systemd unit.
@@ -153,9 +194,8 @@ and check the units are RUNNING. Verify sizes: every instance
   working. Legacy server-wide rules are removed on enable.
   `lib/firewall.sh`, `lib/dns.sh`.
 - [x] Updaters: `update_psiphon_core` (pinned binary + per-instance
-  copies + restart) and `update_firejail` (apt upgrade), menu 10.
-  `lib/psiphon.sh`.
-- [x] Sandbox timezone per egress (firejail `--env=TZ` + bind of the
+  copies + restart), menu 10. `lib/psiphon.sh`.
+- [x] Sandbox timezone per egress (unit `Environment=TZ` + bind of the
   zoneinfo file). Honest limit in the code: this does NOT fix the
   browser timezone IPFighter reads. `lib/psiphon.sh`.
 - [x] Per-service locations + checklist + fixer: `services.yaml`,
@@ -173,8 +213,8 @@ and check the units are RUNNING. Verify sizes: every instance
   gone, re-register folders that lost their entry, verify ports.
   `lib/doctor.sh` → `doctor_sync` (menu 5).
 - [x] Pidfile reconciliation (v2, superseded in v2.3): state was read
-  from the LIVE process (`pgrep` + `/proc/<pid>/cwd`, firejail
-  `--private=` fallback), not only from `psiphon.firejail.pid`. Root
+  from the LIVE process (`pgrep` + `/proc/<pid>/cwd`), not only from
+  the pidfile. Root
   cause found too: v1 never wrote the pidfile anywhere. v2.3 removes
   the pidfile entirely — systemd tracks the process, so the desync
   bug class is dead; doctor now reconciles units instead

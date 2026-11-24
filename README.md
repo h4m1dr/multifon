@@ -8,7 +8,7 @@
 
 **Multifon** is a Bash-based manager for [Psiphon](https://github.com/SpherionOS/PsiphonLinux).
 It installs Psiphon, manages multiple isolated instances, and runs them simultaneously in different regions.
-Each instance runs as its own systemd unit (`multifon-<cc>.service`) under its own system user (`multifon-<cc>`, home = the instance folder, mode 700) in the shared group `multifon` — Unix permissions replace the old Firejail mount namespace, so instances cannot see each other's folders, and one client still gets one exit IP.
+Each instance runs as its own systemd unit (`multifon-<cc>.service`) under its own system user (`multifon-<cc>`, home = the instance folder, mode 700) in the shared group `multifon` — Unix permissions keep instances from seeing each other's folders, and one client still gets one exit IP.
 
 v2 keeps the v1 behaviour (same folders, same port registry, same INFO.txt) and adds:
 - a modular layout (`multifon.sh` + `lib/*.sh`)
@@ -20,9 +20,8 @@ v2 keeps the v1 behaviour (same folders, same port registry, same INFO.txt) and 
 
 v2.1 (on `codr1`, on top of v2) fixes the v2.0 server-wide port-53 block
 (replaced by a scoped owner-match block on a dedicated `multifon` uid,
-so Xray keeps working), adds a scoped STUN block, updaters for the
-Psiphon core and Firejail (the Firejail updater is gone again in v2.3 —
-Firejail itself is), per-egress sandbox timezones, per-service
+so Xray keeps working), adds a scoped STUN block, an updater for the
+Psiphon core, per-egress sandbox timezones, per-service
 egress recommendations (`services.yaml`, `docs/SERVICES.md`) and
 `multifon fix` — one command that runs the whole checklist.
 
@@ -49,18 +48,32 @@ failed); status shows FAILED / RESTART-LOOP instead of STOPPED; the DNS
 leak check skips stopped instances and probes as each instance's own
 user; the firewall status classifier is fixed (it misread gid-owner
 rules as legacy); doctor sync reports stopped units and legacy rules
-instead of "everything already in sync".
+instead of "everything already in sync". The manual repair is now in
+the script: menu 10 → 1 downloads the pinned core, verifies it and
+re-copies it into every instance (with a fallback to the
+already-installed verified core when the download fails), menu 10 → 3
+re-copies the verified core on its own, and `multifon fix` / doctor
+sync repair broken instance binaries automatically. The create path
+prefers the verified `/usr/bin/psiphon-tunnel-core-x86_64` and never
+copies `/usr/bin/psiphon` (the broken wrapper) as a core. `multifon`
+now works from any directory (the entrypoint resolves its symlink),
+and menu 9 verifies that with `multifon status` from /tmp. Menu 4 → 2
+(`multifon nuke`) is the clean slate: printed list + confirmation,
+then it deletes instances, units, users, group, firewall rules, DoH
+forwarders, the wrapper and the old sandbox package (~1 GB autoremove)
+— and keeps the verified core. Egress separation verified live:
+nl 172.235.160.143, se 172.232.158.24, sg 139.59.119.126.
 
-v2.3 (on `codr1`, on top of v2.2) removes Firejail entirely and replaces
-it with systemd units: one user + one unit per instance
+v2.3 (on `codr1`, on top of v2.2) replaces the old sandbox with
+systemd units (historical note: v2.3 replaced the previous sandbox
+with systemd units): one user + one unit per instance
 (`multifon-<cc>`, `multifon-<cc>.service`, `Environment=TZ` per egress),
 lifecycle via `systemctl` (this also kills the pidfile-desync bug class —
 there is no pidfile any more), the scoped port-53 + STUN block switches
 from `--uid-owner multifon` to `--gid-owner multifon` (one rule set for
-all instances), and menu 2 becomes the systemd-units entry with a
-one-time Firejail removal that also offers `apt autoremove --purge` for
-the ~1 GB of Recommends junk Firejail dragged in (xpra + GTK/GL dev
-stack). The folder submenu renumbered (old item 2, "no Firejail", is
+all instances), and menu 2 becomes the systemd-units entry. The old
+sandbox package purge moved into the clean-slate function (menu 4 → 2,
+`multifon nuke`) in v2.3.1. The folder submenu renumbered (old item 2 is
 gone); `multifon start-all` / `stop-all` / `status` work from the CLI.
 
 ---
@@ -98,8 +111,7 @@ lib/
   psiphon.sh           install, folders, start/stop/restart, delete, rotate IP,
                        updater (Psiphon core), sandbox timezone (via the unit),
                        recommended country set (DE/NL/SE/SG)
-  systemd.sh           per-instance users + units, lifecycle (systemctl),
-                       Firejail removal (one-time, with autoremove dry-run)
+  systemd.sh           per-instance users + units, lifecycle (systemctl)
   firewall.sh          iptables open/block ports, scoped port-53 + STUN block
                        (--gid-owner multifon, v2.3)
   doctor.sh            doctor/sync, unit reconcile, health check
@@ -152,7 +164,7 @@ plus its unit file `/etc/systemd/system/multifon-<cc>.service`
 - 🕐 **Sandbox timezone per egress** (unit `Environment=TZ` + zoneinfo bind) — honest limit: this does not change the browser timezone IPFighter reads
 - 🗺 **Per-service recommendations**: which egress for Gemini / Qwen / Muse / Flow / ChatGPT / Claude (`services.yaml`, `docs/SERVICES.md`)
 - 🔁 **Systemd units per instance** (`multifon-<cc>.service`, enabled — autostart on boot)
-- 🧹 **Cleanup tools** for removing Psiphon instances or Firejail leftovers (menu 2 / menu 4 → 2, one-time)
+- 🧹 **Clean slate** (menu 4 → 2, `multifon nuke`): deletes everything multifon owns — instances, units, users, rules, DoH forwarders, wrapper, old sandbox package — and keeps the verified core
 
 ---
 

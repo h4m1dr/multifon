@@ -21,7 +21,7 @@ RESET='\e[0m'
 
 # Directories (HOME is the Psiphon base, same as v1)
 PSIPHON_BASE_DIR="$HOME"
-# (v2.3: no FIREJAIL_CONFIG_DIR any more — Firejail is gone.)
+# (v2.3: no sandbox config dir any more — systemd units are the sandbox.)
 
 # Multi Psiphon logo
 logo() {
@@ -55,8 +55,10 @@ confirm_yes() {
 
 # Status and Psiphon location count
 check_status() {
-    if [[ -x "/usr/bin/psiphon" ]] ; then
+    if psiphon_core_installed; then
         psi_status="${GREEN}✓ Installed${RESET}"
+    elif [[ -x "/usr/bin/psiphon" ]] ; then
+        psi_status="${YELLOW}⚠ broken wrapper only (/usr/bin/psiphon — run menu 10 -> 1)${RESET}"
     else
         psi_status="${RED}✗ Not Found${RESET}"
     fi
@@ -68,10 +70,10 @@ check_status() {
 
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     echo -e " System Check:"
-    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon)${RESET}"
+    echo -e " - Psiphon installed: ${psi_status} ${CYAN}(/usr/bin/psiphon-tunnel-core-x86_64)${RESET}"
     echo -e " - Systemd units: ${CYAN}${units_summary:-not available (no systemctl)}${RESET}"
     echo -e " - Number of configured Psiphon locations: ${MAGENTA}$loc_count${RESET}"
-    echo -e " - Psiphon source: ${BLUE}https://github.com/SpherionOS/PsiphonLinux${RESET}"
+    echo -e " - Psiphon source: ${BLUE}https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries${RESET}"
     echo -e "${YELLOW}${BOLD}─────────────────────────────────────────────────────────────────────────────────────${RESET}"
     info_write_system
     echo ""

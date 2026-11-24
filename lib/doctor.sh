@@ -37,19 +37,14 @@ psiphon_live_pid() {
 }
 
 # Reconcile ONE folder's unit with reality (v2.3 — replaces the old
-# pidfile reconcile; the pidfile-desync bug class is gone because
 # systemd tracks the process, but the unit itself can still be missing
 # or stale):
-#  - stale v2.2 pidfile / start.sh lying around -> remove them
+#  - stale v2.2 start.sh lying around -> remove it
 #  - folder exists but the unit is not active  -> (re)create the unit;
 #    if the core is already running outside systemd, stop it first and
 #    start the unit instead, so exactly one process owns the ports
 doctor_reconcile_unit() {
     local d="$1" live=""
-    if [ -f "$d/psiphon.firejail.pid" ]; then
-        echo -e " ${YELLOW}stale v2.2 pidfile removed:${RESET} $(basename "$d")"
-        rm -f "$d/psiphon.firejail.pid"
-    fi
     if [ -f "$d/start.sh" ]; then
         echo -e " ${YELLOW}stale v2.2 start.sh removed:${RESET} $(basename "$d")"
         rm -f "$d/start.sh"
@@ -269,4 +264,169 @@ health_check_cores_all() {
     for name in warp tor arman; do
         health_check_core "$name" || true
     done
+}
+
+# --- Clean slate / factory reset (v2.3.1) ----------------------------------
+# multifon_nuke — delete EVERYTHING multifon created and leave the machine
+# ready for a fresh rebuild with the fixed script. This is the SINGLE
+# place where "things that get cleaned" live (the old one-off sandbox
+# removal entry is gone — its package purge moved in here).
+#   Deletes: all instance dirs + registry/INFO/markers/DoH configs under
+#     $PSIPHON_BASE_DIR/psiphon, all multifon-psiphon-*.service units
+#     (+ the dead oneshot autostart unit), all multifon-<cc> users (and
+#     the old bare `multifon` user, if it still exists) + the multifon
+#     group, the scoped gid-owner AND legacy uid-owner / server-wide
+#     firewall rules (+ per-instance INPUT rules), the DoH forwarders,
+#     the /usr/bin/psiphon wrapper, /etc/psiphon leftovers, and the old
+#     sandbox package + its ~1 GB autoremove set.
+#   KEEPS: the verified real core /usr/bin/psiphon-tunnel-core-x86_64
+#     (the fixed create path reuses it after verification).
+#   NEVER deletes: the ~/multifon checkout itself — the running script
+#     would delete itself mid-run. That stays a manual last step (see
+#     the message this prints at the end).
+# Prints exactly what it will delete and asks confirm_yes first — never
+# silent. Run it ONLY after the v2.3.1 merge is pulled: the rebuild
+# needs the fixed create path.
+multifon_nuke() {
+    local data_dir="$PSIPHON_BASE_DIR/psiphon"
+    echo -e "${RED}${BOLD}CLEAN SLATE — this deletes everything multifon created:${RESET}"
+    echo ""
+    echo "  Instances + data:  $data_dir  (all psiphon-<cc> dirs, .allocated_ports,"
+    echo "                     INFO.txt, .sandbox-gid, .dns, .core-sha256)"
+    echo "  Units:             all multifon-psiphon-*.service (+ old oneshot autostart unit)"
+    echo "  Users + group:     multifon-<cc> users (+ old bare multifon user), group multifon"
+    echo "  Firewall:          scoped gid-owner + legacy uid-owner/server-wide rules"
+    echo "                     (+ per-instance INPUT rules)"
+    echo "  DoH forwarders:    all dnscrypt-proxy forwarders (stop + remove configs)"
+    echo "  Binaries:          /usr/bin/psiphon (broken wrapper), /etc/psiphon leftovers"
+    echo "  Old sandbox pkg:   purge + apt autoremove --purge (~1 GB)"
+    echo ""
+    echo -e "${GREEN}KEPT: /usr/bin/psiphon-tunnel-core-x86_64 (verified real core)${RESET}"
+    echo -e "${GREEN}NOT deleted here: ~/multifon (the checkout — manual last step, see below)${RESET}"
+    echo ""
+    echo -e "${YELLOW}Disk before:${RESET}"
+    df -h / | tail -n1
+    echo ""
+    if ! confirm_yes "Delete ALL of the above and start from a clean slate?"; then
+        echo -e "${YELLOW}Aborted — nothing was deleted.${RESET}"
+        return 1
+    fi
+
+    # 1) Stop the DoH forwarders (they belong to the deleted instances),
+    #    then stop every instance unit.
+    echo -e "${CYAN}[1/8] Stopping DoH forwarders...${RESET}"
+    dns_forwarder_stop_all 2>/dev/null || true
+    echo -e "${CYAN}[2/8] Stopping all instance units...${RESET}"
+    systemd_stop_all 2>/dev/null || true
+    # Any core process still alive (e.g. started outside its unit).
+    local pid
+    for pid in $(pgrep -f "psiphon-tunnel-core" 2>/dev/null || true); do
+        echo -e "${YELLOW}Killing leftover core process $pid...${RESET}"
+        _kill_pid "$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    done
+
+    # 2) Disable + remove the unit files (+ the dead oneshot autostart).
+    echo -e "${CYAN}[3/8] Removing unit files...${RESET}"
+    local unit
+    shopt -s nullglob
+    for unit in "$SYSTEMD_UNIT_DIR"/multifon-psiphon-*.service; do
+        sudo systemctl disable --now "$(basename "$unit")" >/dev/null 2>&1 || true
+        sudo rm -f "$unit"
+        echo "  removed $(basename "$unit")"
+    done
+    shopt -u nullglob
+    if [[ -f "$SYSTEMD_UNIT_DIR/$LEGACY_AUTOSTART_UNIT" ]]; then
+        sudo systemctl disable --now "$LEGACY_AUTOSTART_UNIT" >/dev/null 2>&1 || true
+        sudo rm -f "$SYSTEMD_UNIT_DIR/$LEGACY_AUTOSTART_UNIT"
+        echo "  removed $LEGACY_AUTOSTART_UNIT"
+    fi
+    sudo systemctl daemon-reload 2>/dev/null || true
+    sudo systemctl reset-failed 2>/dev/null || true
+
+    # 3) Firewall: scoped + legacy rules, then per-instance INPUT rules.
+    echo -e "${CYAN}[4/8] Removing firewall rules...${RESET}"
+    dns_leak_block_disable 2>/dev/null || true
+    local d
+    while IFS= read -r d; do
+        firewall_close_instance_ports "$(basename "$d")" 2>/dev/null || true
+    done < <(psiphon_dirs)
+
+    # 4) Delete the per-instance users + the shared group.
+    echo -e "${CYAN}[5/8] Deleting users + group...${RESET}"
+    local u
+    while IFS= read -r d; do
+        u=$(systemd_instance_user "$d")
+        if id -u "$u" >/dev/null 2>&1; then
+            if sudo userdel "$u" 2>/dev/null || userdel "$u" 2>/dev/null; then
+                echo "  deleted user $u"
+            else
+                echo -e "  ${YELLOW}could not delete user $u (still has processes?) — check: id $u${RESET}"
+            fi
+        fi
+    done < <(psiphon_dirs)
+    # Users whose folder is already gone (incl. the old bare `multifon` user).
+    while IFS=: read -r u _; do
+        [[ "$u" == "multifon" || "$u" == multifon-* ]] || continue
+        if sudo userdel "$u" 2>/dev/null || userdel "$u" 2>/dev/null; then
+            echo "  deleted user $u"
+        fi
+    done < <(getent passwd)
+    if getent group "$SANDBOX_GROUP" >/dev/null 2>&1; then
+        if sudo groupdel "$SANDBOX_GROUP" 2>/dev/null || groupdel "$SANDBOX_GROUP" 2>/dev/null; then
+            echo "  deleted group $SANDBOX_GROUP"
+        else
+            echo -e "  ${YELLOW}could not delete group $SANDBOX_GROUP — check: getent group $SANDBOX_GROUP${RESET}"
+        fi
+    fi
+
+    # 5) Delete the data dir (instances, registry, INFO, markers, DoH).
+    echo -e "${CYAN}[6/8] Deleting $data_dir ...${RESET}"
+    if [[ -d "$data_dir" ]]; then
+        sudo rm -rf "$data_dir" 2>/dev/null || rm -rf "$data_dir" 2>/dev/null || true
+        if [[ -d "$data_dir" ]]; then
+            echo -e "  ${RED}could not delete $data_dir — check permissions and remove it by hand.${RESET}"
+        else
+            echo "  removed $data_dir"
+        fi
+    fi
+
+    # 6) Wrapper + /etc leftovers. The verified core is KEPT.
+    echo -e "${CYAN}[7/8] Removing the broken wrapper + /etc leftovers...${RESET}"
+    sudo rm -f /usr/bin/psiphon 2>/dev/null || rm -f /usr/bin/psiphon 2>/dev/null || true
+    [[ -e /usr/bin/psiphon ]] || echo "  removed /usr/bin/psiphon"
+    sudo rm -rf /etc/psiphon 2>/dev/null || rm -rf /etc/psiphon 2>/dev/null || true
+    [[ -e /etc/psiphon ]] || echo "  removed /etc/psiphon"
+    if _core_file_ok_quiet "/usr/bin/psiphon-tunnel-core-x86_64"; then
+        echo -e "  ${GREEN}kept verified core /usr/bin/psiphon-tunnel-core-x86_64 ($(stat -c%s /usr/bin/psiphon-tunnel-core-x86_64 2>/dev/null || echo ?) bytes)${RESET}"
+    else
+        echo -e "  ${RED}WARNING: no verified core at /usr/bin/psiphon-tunnel-core-x86_64 — run menu 10 -> 1 to download it before recreating.${RESET}"
+    fi
+
+    # 7) Old sandbox package purge + autoremove (dry-run first).
+    echo -e "${CYAN}[8/8] Purging the old sandbox package...${RESET}"
+    if command -v firejail >/dev/null 2>&1 || dpkg -l firejail 2>/dev/null | grep -q '^ii'; then
+        sudo apt purge -y firejail firejail-profiles || echo -e "${YELLOW}apt purge had an issue — continuing anyway.${RESET}"
+    else
+        echo -e "${GREEN}Old sandbox package is already gone.${RESET}"
+    fi
+    echo ""
+    echo -e "${YELLOW}These packages would be autoremoved:${RESET}"
+    sudo apt autoremove --dry-run 2>/dev/null | sed -n '/will be REMOVED/,/^$/p' | head -n 20
+    echo ""
+    sudo apt autoremove --purge -y || echo -e "${YELLOW}autoremove had an issue — check apt output above.${RESET}"
+
+    echo ""
+    echo -e "${YELLOW}Disk after:${RESET}"
+    df -h / | tail -n1
+    echo ""
+    echo -e "${GREEN}Clean slate done. Nothing multifon-owned is left except the verified core.${RESET}"
+    echo ""
+    echo -e "${CYAN}Rebuild (with the fixed script):${RESET}"
+    echo "  1) Menu 3 -> create the instances (NL/SE/SG as before, or the"
+    echo "     recommended DE/NL/SE/SG — your choice, not hardcoded), then"
+    echo "     menu 3 -> 3 (start-all)."
+    echo "  2) Manual last step — the checkout itself: only after you have"
+    echo "     confirmed 'multifon' works from another directory (menu 9),"
+    echo "     remove the old checkout and re-clone fresh:"
+    echo "       rm -rf ~/multifon"
 }
