@@ -37,6 +37,20 @@ new cores from the serverless research (Cloudflare Workers VLESS as the
 next egress core, VLESS+REALITY / AmneziaWG / Hysteria2 as leg-1
 inbounds).
 
+v2.3.1 (on `codr1`, on top of v2.3) fixes the live-test failures of v2.3:
+the SpherionOS install turned out to be a broken 90-byte wrapper, and the
+create path copied the first `-x` file it found with no verification, so
+every instance got the wrapper (exit 127, restart loop). Now the binary
+is verified (ELF + >= 1 MB) at create time, in the updater, and before a
+unit is written or started; `repair_instance_binaries` (doctor sync,
+`multifon fix`) re-copies the verified official core into broken
+instances; units get restart-loop protection (5 failures in 5 min, then
+failed); status shows FAILED / RESTART-LOOP instead of STOPPED; the DNS
+leak check skips stopped instances and probes as each instance's own
+user; the firewall status classifier is fixed (it misread gid-owner
+rules as legacy); doctor sync reports stopped units and legacy rules
+instead of "everything already in sync".
+
 v2.3 (on `codr1`, on top of v2.2) removes Firejail entirely and replaces
 it with systemd units: one user + one unit per instance
 (`multifon-<cc>`, `multifon-<cc>.service`, `Environment=TZ` per egress),

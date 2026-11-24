@@ -35,7 +35,8 @@ multifon_fix() {
     echo -e "Fixes what the server can fix; prints the rest as a checklist."
     echo ""
 
-    # 0) Repair drift first (orphan registry/INFO entries, stale units).
+    # 0) Repair drift first (orphan registry/INFO entries, stale units,
+    #    broken instance binaries — doctor_sync runs repair_instance_binaries).
     echo -e "${YELLOW}[0/4] Doctor sync...${RESET}"
     doctor_sync
     echo ""

@@ -91,6 +91,75 @@ psiphon_verify_binary() {
     echo "$sha"
 }
 
+# psiphon_verify_instance_binary <file> — the v2.3.1 gate: a real core
+# is an ELF binary of ~10.5 MB. A 90-byte file (a wrapper script, or a
+# failed download saved as a file) passes -x but exits 127 in the unit
+# and restarts forever. Prints the SHA-256 on success; returns 1 with
+# a clear message otherwise. Minimum 1 MB: far below the real ~10.5 MB,
+# far above any wrapper script.
+PSIPHON_MIN_BINARY_BYTES=1048576
+
+psiphon_verify_instance_binary() {
+    local file="$1" sha size
+    sha=$(psiphon_verify_binary "$file") || { echo -e "${RED}Not a real Psiphon binary: $file (empty or not an ELF binary).${RESET}"; return 1; }
+    size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+    if [[ "$size" -lt "$PSIPHON_MIN_BINARY_BYTES" ]]; then
+        echo -e "${RED}Binary too small to be the real core: $file is $size bytes (real core is ~10.5 MB) — probably a wrapper script or a failed download.${RESET}"
+        return 1
+    fi
+    echo "$sha"
+}
+
+# _core_file_ok_quiet <file> — silent boolean for source selection.
+_core_file_ok_quiet() {
+    local file="$1" size
+    [[ -x "$file" ]] || return 1
+    psiphon_verify_binary "$file" >/dev/null 2>&1 || return 1
+    size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+    [[ "$size" -ge "$PSIPHON_MIN_BINARY_BYTES" ]]
+}
+
+# repair_instance_binaries — v2.3.1 repair for the SpherionOS broken
+# install: /usr/bin/psiphon is a 90-byte wrapper pointing at a missing
+# /etc/psiphon/psiphon-tunnel-core-x86_64, and _create_single_location
+# used to copy the first -x file it found, so every instance got a copy
+# of the broken wrapper (exit 127, restart loop). This replaces the
+# binary in every instance dir whose file fails verification, with the
+# VERIFIED official core at /usr/bin/psiphon-tunnel-core-x86_64
+# (menu 10 -> 1 downloads it). /usr/bin/psiphon is NEVER trusted as a
+# source. Instances that were running (looping) are restarted after the
+# repair; stopped ones stay stopped. Prints "Repaired N instance(s)."
+# as its last line; returns 1 when no verified real core exists yet.
+repair_instance_binaries() {
+    local src="/usr/bin/psiphon-tunnel-core-x86_64" d repaired=0 was_running
+    if ! _core_file_ok_quiet "$src"; then
+        echo -e "${YELLOW}No verified real core at $src — run menu 10 -> 1 first (downloads the pinned official core), then repair again.${RESET}"
+        return 1
+    fi
+    while IFS= read -r d; do
+        if psiphon_verify_instance_binary "$d/psiphon-tunnel-core-x86_64" >/dev/null 2>&1; then
+            continue
+        fi
+        echo -e "${YELLOW}Bad binary in $(basename "$d") — replacing with the verified official core.${RESET}"
+        was_running=0
+        psiphon_live_pid "$d" >/dev/null 2>&1 && was_running=1
+        stop_psiphon_in_dir "$d" 2>/dev/null || true
+        sudo cp "$src" "$d/psiphon-tunnel-core-x86_64" 2>/dev/null || cp "$src" "$d/psiphon-tunnel-core-x86_64"
+        sudo chmod +x "$d/psiphon-tunnel-core-x86_64"
+        sudo chown -R "$(systemd_instance_user "$d"):$SANDBOX_GROUP" "$d" 2>/dev/null || true
+        if psiphon_verify_instance_binary "$d/psiphon-tunnel-core-x86_64" >/dev/null 2>&1; then
+            repaired=$((repaired + 1))
+            if [[ "$was_running" -eq 1 ]]; then
+                systemd_instance_start "$d" || echo -e "${YELLOW}$(basename "$d") repaired but did not start — check: systemctl status $(systemd_unit_name "$d")${RESET}"
+            fi
+        else
+            echo -e "${RED}$(basename "$d"): replacement still fails verification — left stopped.${RESET}"
+        fi
+    done < <(psiphon_dirs)
+    echo "Repaired $repaired instance(s)."
+    return 0
+}
+
 # 1) Psiphon Installation Menu
 install_psiphon_menu() {
     local installed="No"
@@ -154,14 +223,25 @@ install_psiphon_menu() {
                     continue
                 fi
                 new_sha="$(psiphon_verify_binary "$temp_file" || true)"
+                if [[ -n "$new_sha" ]]; then
+                    local _dl_size
+                    _dl_size=$(stat -c%s "$temp_file" 2>/dev/null || echo 0)
+                    if [[ "$_dl_size" -lt "$PSIPHON_MIN_BINARY_BYTES" ]]; then
+                        echo -e "${RED}Downloaded file is only $_dl_size bytes — too small to be the real core. Refusing to install.${RESET}"
+                        new_sha=""
+                    fi
+                fi
                 if [[ -z "$new_sha" ]]; then
-                    echo -e "${RED}Downloaded file failed verification (empty or not an ELF binary). Refusing to install.${RESET}"
+                    echo -e "${RED}Downloaded file failed verification (empty, not an ELF binary, or too small). Refusing to install.${RESET}"
                     rm -f "$temp_file"
                     pause
                     continue
                 fi
                 if cmp -s "$temp_file" "/usr/bin/psiphon-tunnel-core-x86_64"; then
                     echo -e "${GREEN}Already up to date.${RESET}"
+                    # v2.3.1: record the SHA even when nothing was moved.
+                    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+                    printf '%s  %s\n' "$new_sha" "$PSIPHON_PINNED_VERSION" > "$PSIPHON_SHA_FILE"
                     rm -f "$temp_file"
                 else
                     # A changed hash for the same pinned version is suspicious.
@@ -235,8 +315,16 @@ update_psiphon_core() {
         return 1
     fi
     new_sha="$(psiphon_verify_binary "$temp_file" || true)"
+    if [[ -n "$new_sha" ]]; then
+        local _dl_size
+        _dl_size=$(stat -c%s "$temp_file" 2>/dev/null || echo 0)
+        if [[ "$_dl_size" -lt "$PSIPHON_MIN_BINARY_BYTES" ]]; then
+            echo -e "${RED}Downloaded file is only $_dl_size bytes — too small to be the real core. Refusing to install.${RESET}"
+            new_sha=""
+        fi
+    fi
     if [[ -z "$new_sha" ]]; then
-        echo -e "${RED}Downloaded file failed verification (empty or not an ELF binary). Refusing to install.${RESET}"
+        echo -e "${RED}Downloaded file failed verification (empty, not an ELF binary, or too small). Refusing to install.${RESET}"
         rm -f "$temp_file"
         return 1
     fi
@@ -257,10 +345,14 @@ update_psiphon_core() {
     else
         sudo mv "$temp_file" /usr/bin/psiphon-tunnel-core-x86_64
         sudo chmod +x /usr/bin/psiphon-tunnel-core-x86_64
-        mkdir -p "$PSIPHON_BASE_DIR/psiphon"
-        printf '%s  %s\n' "$new_sha" "$PSIPHON_PINNED_VERSION" > "$PSIPHON_SHA_FILE"
-        echo -e "${GREEN}Installed to /usr/bin. SHA-256 recorded in $PSIPHON_SHA_FILE${RESET}"
+        echo -e "${GREEN}Installed to /usr/bin.${RESET}"
     fi
+    # v2.3.1: record the SHA whenever a verified binary is in place — the
+    # old code only recorded it inside the move branch, so an already
+    # identical binary (e.g. hand-installed) never got a SHA recorded.
+    mkdir -p "$PSIPHON_BASE_DIR/psiphon"
+    printf '%s  %s\n' "$new_sha" "$PSIPHON_PINNED_VERSION" > "$PSIPHON_SHA_FILE"
+    echo -e "${GREEN}SHA-256 recorded in $PSIPHON_SHA_FILE${RESET}"
     rm -f "$temp_file"
     # Refresh the per-instance copies and restart what was running.
     local d bn was_running
@@ -270,6 +362,9 @@ update_psiphon_core() {
         psiphon_live_pid "$d" >/dev/null 2>&1 && was_running=1
         sudo cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64" 2>/dev/null || cp /usr/bin/psiphon-tunnel-core-x86_64 "$d/psiphon-tunnel-core-x86_64"
         sudo chmod +x "$d/psiphon-tunnel-core-x86_64"
+        if ! psiphon_verify_instance_binary "$d/psiphon-tunnel-core-x86_64" >/dev/null; then
+            echo -e "${RED}$bn: the refreshed copy failed verification — check the binary in $d.${RESET}"
+        fi
         # The folder belongs to the per-instance user — hand it back.
         sudo chown -R "$(systemd_instance_user "$d"):$SANDBOX_GROUP" "$d" 2>/dev/null || true
         if [[ "$was_running" -eq 1 ]]; then
@@ -325,23 +420,43 @@ _create_single_location() {
     local dir_path="$PSIPHON_BASE_DIR/psiphon/$name"
     mkdir -p "$dir_path"
 
-    # Locate psiphon core binary from common paths (prefer system Psiphon first)
+    # Locate a REAL psiphon core binary (v2.3.1 gate). /usr/bin/psiphon
+    # is the SpherionOS wrapper script (90 bytes, not an ELF binary,
+    # pointing at /etc/psiphon/psiphon-tunnel-core-x86_64 which does not
+    # exist) — the old code copied the first -x file it found, so every
+    # instance got a copy of the broken wrapper (exit 127, restart loop).
+    # Every candidate is now verified (ELF + >= 1 MB) before it is used;
+    # a candidate that fails is skipped with its path and size named,
+    # never copied.
     local core_src=""
-    local p
+    local p p_size
     for p in "/etc/psiphon/psiphon-tunnel-core-x86_64" \
              "/etc/psiphon/psiphon-tunnel-core" \
              "$PSIPHON_BASE_DIR/psiphon-tunnel-core-x86_64" \
              "$PSIPHON_BASE_DIR/psiphon-tunnel-core" \
              "/usr/bin/psiphon-tunnel-core-x86_64" \
              "/usr/bin/psiphon"; do
-        [[ -x "$p" ]] && core_src="$p" && break
+        if [[ -x "$p" ]] && _core_file_ok_quiet "$p"; then
+            core_src="$p"
+            break
+        elif [[ -e "$p" ]]; then
+            p_size=$(stat -c%s "$p" 2>/dev/null || echo "?")
+            echo -e "${YELLOW}Skipping $p — not a real core binary ($p_size bytes, not ELF or too small).${RESET}"
+        fi
     done
     if [[ -z "$core_src" ]]; then
-        echo -e "${RED}✗ Psiphon core not found (looked in: /etc/psiphon, $PSIPHON_BASE_DIR, /usr/bin). Skipping $name.${RESET}"
+        echo -e "${RED}✗ No real Psiphon core found (looked in: /etc/psiphon, $PSIPHON_BASE_DIR, /usr/bin). Skipping $name.${RESET}"
+        echo -e "${YELLOW}Get a real binary first: menu 10 -> 1 (downloads the pinned official core to /usr/bin/psiphon-tunnel-core-x86_64), then create the instance again.${RESET}"
+        rmdir "$dir_path" 2>/dev/null || true
         return 1
     fi
     cp "$core_src" "$dir_path/psiphon-tunnel-core-x86_64"
     chmod +x "$dir_path/psiphon-tunnel-core-x86_64"
+    if ! psiphon_verify_instance_binary "$dir_path/psiphon-tunnel-core-x86_64" >/dev/null; then
+        echo -e "${RED}✗ The copied binary failed verification — refusing to create $name.${RESET}"
+        rm -rf "$dir_path"
+        return 1
+    fi
 
     # Pick unique, available ports (prefer 8081–8091 and 1081–1091)
     local http_port socks_port http_port_sel socks_port_sel

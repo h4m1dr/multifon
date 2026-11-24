@@ -164,6 +164,8 @@ systemd_unit_write() {
     unit="$SYSTEMD_UNIT_DIR/$(systemd_unit_name "$d")"
 
     # The binary must be the x86_64 one; keep the v1 rename fallback.
+    # v2.3.1: -x alone is not enough — a 90-byte wrapper script is also
+    # +x, and it exits 127 in the unit forever. Verify ELF + size.
     bin="$d/psiphon-tunnel-core-x86_64"
     if [[ ! -x "$bin" ]]; then
         if [[ -f "$d/psiphon-tunnel-core" ]]; then
@@ -174,6 +176,10 @@ systemd_unit_write() {
             return 1
         fi
     fi
+    if ! psiphon_verify_instance_binary "$bin"; then
+        echo -e "${RED}Bad binary in $d — not a real core (see above). Delete the instance and recreate it after getting a real binary (menu 10 -> 1).${RESET}"
+        return 1
+    fi
 
     tmp=$(mktemp) || return 1
     {
@@ -181,6 +187,13 @@ systemd_unit_write() {
         printf 'Description=multifon Psiphon instance %s (egress %s)\n' "$bn" "$cc"
         printf '%s\n' "After=network-online.target"
         printf '%s\n' "Wants=network-online.target"
+        # Restart-loop protection (v2.3.1): Restart=on-failure +
+        # RestartSec=5 alone restarts forever — the default burst limit
+        # (5 restarts in 10s) is never hit because restarts are 5s apart
+        # (a broken 90-byte binary hit restart #102 in ~8 min). 5 failures
+        # in 5 min -> the unit goes failed and STOPS, instead of looping.
+        printf '%s\n' "StartLimitIntervalSec=300"
+        printf '%s\n' "StartLimitBurst=5"
         printf '%s\n' ""
         printf '%s\n' "[Service]"
         printf '%s\n' "Type=simple"
@@ -239,15 +252,84 @@ systemd_unit_is_active() {
     systemctl is-active --quiet "$1" 2>/dev/null
 }
 
+# systemd_instance_preflight <dir> — refuse to start an instance whose
+# binary is not a real core or whose config is missing/broken. A start
+# that would exit 127 (or crash on a bad config) is reported HERE,
+# instead of letting the unit fail and restart forever.
+systemd_instance_preflight() {
+    local d="$1" bin
+    bin="$d/psiphon-tunnel-core-x86_64"
+    if [[ ! -f "$bin" ]]; then
+        echo -e "${RED}$(basename "$d"): no binary in $d — cannot start. Delete and recreate it (menu 3 -> 1) after getting a real core (menu 10 -> 1).${RESET}"
+        return 1
+    fi
+    if ! psiphon_verify_instance_binary "$bin"; then
+        echo -e "${RED}$(basename "$d"): bad binary in $d — not a real core (see above). Delete the instance and recreate it after getting a real binary (menu 10 -> 1).${RESET}"
+        return 1
+    fi
+    if [[ ! -f "$d/config.json" ]]; then
+        echo -e "${RED}$(basename "$d"): config.json is missing in $d — cannot start.${RESET}"
+        return 1
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$d/config.json" 2>/dev/null; then
+            echo -e "${RED}$(basename "$d"): config.json does not parse as JSON — cannot start.${RESET}"
+            return 1
+        fi
+    elif command -v jq >/dev/null 2>&1; then
+        if ! jq -e . "$d/config.json" >/dev/null 2>&1; then
+            echo -e "${RED}$(basename "$d"): config.json does not parse as JSON — cannot start.${RESET}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# systemd_unit_state <unit> — RUNNING / FAILED (<result>) /
+# RESTART-LOOP (restart #N) / STARTING / STOPPED / NO UNIT.
+# is-active alone cannot tell a failed unit from a stopped one, and a
+# unit in "activating (auto-restart)" is NOT stopped — it is looping.
+systemd_unit_state() {
+    local unit="$1" active sub result restarts load
+    load=$(systemctl show -p LoadState --value "$unit" 2>/dev/null || echo unknown)
+    [[ "$load" == "loaded" ]] || { echo "NO UNIT"; return 0; }
+    active=$(systemctl show -p ActiveState --value "$unit" 2>/dev/null || echo unknown)
+    sub=$(systemctl show -p SubState --value "$unit" 2>/dev/null || true)
+    result=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)
+    restarts=$(systemctl show -p NRestarts --value "$unit" 2>/dev/null || echo 0)
+    case "$active" in
+        active) echo "RUNNING" ;;
+        failed) echo "FAILED${result:+ ($result)}" ;;
+        activating)
+            if [[ "$sub" == "auto-restart" ]]; then
+                echo "RESTART-LOOP (restart #${restarts:-?})"
+            else
+                echo "STARTING"
+            fi
+            ;;
+        *) echo "STOPPED" ;;
+    esac
+}
+
 # systemd_instance_start <dir> — start the unit (restart if already active,
 # so a "launch" always gives a fresh process — the rotate_ip semantics).
+# v2.3.1: the systemctl error is PRINTED (the old code swallowed stderr,
+# so a failed start looked identical to a successful one), and the unit
+# is verified to have stayed up afterwards — `systemctl start` reports
+# success as soon as the process forks, even if it exits immediately.
 systemd_instance_start() {
-    local d="$1" unit
+    local d="$1" unit out
     unit=$(systemd_unit_name "$d")
+    systemd_instance_preflight "$d" || return 1
     if systemd_unit_is_active "$unit"; then
-        sudo systemctl restart "$unit" 2>/dev/null || systemctl restart "$unit" 2>/dev/null || return 1
+        out=$(sudo systemctl restart "$unit" 2>&1 || systemctl restart "$unit" 2>&1) || { echo -e "${RED}Could not restart $(basename "$d") ($unit):${RESET}"; echo "$out" | tail -n 5; return 1; }
     else
-        sudo systemctl start "$unit" 2>/dev/null || systemctl start "$unit" 2>/dev/null || return 1
+        out=$(sudo systemctl start "$unit" 2>&1 || systemctl start "$unit" 2>&1) || { echo -e "${RED}Could not start $(basename "$d") ($unit):${RESET}"; echo "$out" | tail -n 5; return 1; }
+    fi
+    sleep 1
+    if ! systemd_unit_is_active "$unit"; then
+        echo -e "${RED}$(basename "$d") did not stay up ($unit): state $(systemd_unit_state "$unit") — check: systemctl status $unit; journalctl -u $unit -n 30${RESET}"
+        return 1
     fi
 }
 
@@ -339,16 +421,22 @@ systemd_units_sync() {
 # systemd_units_status — one line per instance: unit state + live pid.
 systemd_units_status() {
     echo -e "${YELLOW}Psiphon instances (systemd units):${RESET}"
-    local any=0 d unit st pid
+    local any=0 d unit st pid state
     while IFS= read -r d; do
         any=1
         unit=$(systemd_unit_name "$d")
         read -r _hp sp < <(instance_ports "$d")
-        if systemd_unit_is_active "$unit"; then
-            st="${GREEN}RUNNING${RESET}"
-        else
-            st="${RED}STOPPED${RESET}"
-        fi
+        # v2.3.1: a failed unit and a restart-looping unit are NOT
+        # "STOPPED" — show them as what they are, or the failure is
+        # invisible in the menu (that is how the 90-byte binary hid).
+        state=$(systemd_unit_state "$unit")
+        case "$state" in
+            RUNNING) st="${GREEN}RUNNING${RESET}" ;;
+            FAILED*|RESTART-LOOP*) st="${RED}$state${RESET}" ;;
+            "NO UNIT") st="${YELLOW}NO UNIT${RESET}" ;;
+            STARTING) st="${YELLOW}STARTING${RESET}" ;;
+            *) st="${RED}STOPPED${RESET}" ;;
+        esac
         pid=$(psiphon_live_pid "$d" 2>/dev/null || true)
         if [[ -n "$pid" ]]; then
             echo -e " $st  $(basename "$d")  ${WHITE}(HTTP:$_hp SOCKS:$sp, pid $pid, $unit)${RESET}"

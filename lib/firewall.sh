@@ -333,17 +333,51 @@ dns_leak_block_disable() {
     esac
 }
 
+# _scoped_block_kind <tag> -> open | scoped | legacy | both
+# v2.3.1 fix: the old classifier grepped for
+# "multifon:dns-leak-block.*--gid-owner", but in `iptables -S` output
+# the --gid-owner match comes BEFORE the comment tag
+# (-A OUTPUT -m owner --gid-owner multifon ... -m comment --comment
+# "multifon:dns-leak-block"), so that pattern could NEVER match and
+# every scoped block was misreported as LEGACY — while the enable path
+# had installed the correct gid-owner rules all along. Now the tag
+# lines are collected first, then split by --gid-owner.
+_scoped_block_kind() {
+    local tag="$1" rules
+    rules=$(sudo iptables -S OUTPUT 2>/dev/null | grep -F "$tag" || true)
+    [[ -z "$rules" ]] && { echo "open"; return 0; }
+    local has_gid=0 has_other=0
+    echo "$rules" | grep -q -- "--gid-owner" && has_gid=1
+    echo "$rules" | grep -vq -- "--gid-owner" && has_other=1
+    if [[ "$has_gid" -eq 1 && "$has_other" -eq 1 ]]; then echo "both"
+    elif [[ "$has_gid" -eq 1 ]]; then echo "scoped"
+    else echo "legacy"; fi
+}
+
+# True when tagged legacy rules (uid-owner or server-wide, no gid-owner)
+# are present — used by doctor_sync.
+firewall_legacy_rules_present() {
+    case "$(firewall_backend)" in
+        iptables)
+            local rules
+            rules=$(sudo iptables -S OUTPUT 2>/dev/null | grep -F -e "multifon:dns-leak-block" -e "multifon:stun-block" || true)
+            [[ -z "$rules" ]] && return 1
+            echo "$rules" | grep -vq -- "--gid-owner"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 # Status of the scoped DNS block: blocked / open / unknown.
 dns_leak_block_status() {
     case "$(firewall_backend)" in
         iptables)
-            if sudo iptables -S OUTPUT 2>/dev/null | grep -q "multifon:dns-leak-block.*--gid-owner"; then
-                echo "blocked (scoped, gid $SANDBOX_GROUP)"
-            elif sudo iptables -S OUTPUT 2>/dev/null | grep -q "multifon:dns-leak-block"; then
-                echo "blocked (LEGACY uid-owner/server-wide — remove it: re-enable once to migrate)"
-            else
-                echo "open"
-            fi
+            case "$(_scoped_block_kind "multifon:dns-leak-block")" in
+                scoped) echo "blocked (scoped, gid $SANDBOX_GROUP)" ;;
+                legacy) echo "blocked (LEGACY uid-owner/server-wide — remove it: re-enable once to migrate)" ;;
+                both) echo "blocked (scoped, gid $SANDBOX_GROUP) + LEGACY rules also present — re-enable once to remove them" ;;
+                *) echo "open" ;;
+            esac
             ;;
         nft)
             if sudo nft list ruleset 2>/dev/null | grep -q "dport 53 reject"; then
@@ -364,13 +398,12 @@ dns_leak_block_status() {
 stun_block_status() {
     case "$(firewall_backend)" in
         iptables)
-            if sudo iptables -S OUTPUT 2>/dev/null | grep -q "multifon:stun-block.*--gid-owner"; then
-                echo "blocked (scoped, gid $SANDBOX_GROUP; server-side only — see comment in lib/firewall.sh)"
-            elif sudo iptables -S OUTPUT 2>/dev/null | grep -q "multifon:stun-block"; then
-                echo "blocked (LEGACY uid-owner — remove it: re-enable once to migrate)"
-            else
-                echo "open"
-            fi
+            case "$(_scoped_block_kind "multifon:stun-block")" in
+                scoped) echo "blocked (scoped, gid $SANDBOX_GROUP; server-side only — see comment in lib/firewall.sh)" ;;
+                legacy) echo "blocked (LEGACY uid-owner — remove it: re-enable once to migrate)" ;;
+                both) echo "blocked (scoped, gid $SANDBOX_GROUP) + LEGACY rules also present — re-enable once to remove them" ;;
+                *) echo "open" ;;
+            esac
             ;;
         nft)
             if sudo nft list ruleset 2>/dev/null | grep -q "3478"; then

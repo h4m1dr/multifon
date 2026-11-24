@@ -19,6 +19,54 @@ reviewed change on `codr1`.
   Telegram control plane, Windows client, serverless egress. Its
   verdicts are folded into Phases 4–5 and Phase before 6 below.
 
+## v2.3.1 — live-test bugfix (on `codr1`, on top of v2.3)
+Root cause, confirmed live 2026-11-24 ~04:59 Tehran: the SpherionOS
+install is broken — `/usr/bin/psiphon` is a 90-byte bash wrapper
+(`#!/bin/bash` + `/etc/psiphon/psiphon-tunnel-core-x86_64 -config
+/etc/psiphon/psiphon.config`) and the real core under `/etc/psiphon/`
+does not exist. `_create_single_location` copied the first `-x` file
+from a candidate list with NO verification, so all three instances got
+the wrapper: unit exits 127, `Restart=on-failure` + `RestartSec=5`
+restarts forever (counter 102 in ~8 min). Hamidr manually downloaded
+the real core (10,557,300 bytes, ELF 64-bit, statically linked).
+- [x] Binary verification (ELF + >= 1 MB) at create time (every
+  candidate is checked, the source path + size are named when skipped),
+  in the updater download, and before a unit is written or started
+  (preflight: binary + config.json parses). A bad binary is refused
+  with a clear error, never copied.
+- [x] `repair_instance_binaries`: re-copies the verified official core
+  (`/usr/bin/psiphon-tunnel-core-x86_64`, never `/usr/bin/psiphon`) into
+  instance dirs whose binary fails verification; wired into
+  `doctor_sync` (and therefore `multifon fix`). The updater is the
+  repair path (menu 10 -> 1 downloads the pinned official v2.0.43).
+- [x] Updater SHA quirk fixed: the SHA is now recorded whenever a
+  verified binary is in place, not only when the file is moved (an
+  already-identical / hand-installed binary never got a SHA before).
+- [x] Restart-loop protection in generated units: `StartLimitBurst=5` +
+  `StartLimitIntervalSec=300` (the default 5-in-10s limit is never hit
+  with 5s restarts, so it looped forever; now it goes failed and stops).
+- [x] Status distinguishes FAILED / RESTART-LOOP (restart #N) /
+  STARTING / STOPPED / NO UNIT (`systemd_unit_state`); start prints the
+  systemctl error and verifies the unit stayed up.
+- [x] DNS leak check skips stopped instances (no more "DoH FAILED" /
+  "LEAK PATH OPEN" false alarms) and probes as each instance's own user.
+- [x] Firewall status classifier fixed: the old grep
+  (`multifon:dns-leak-block.*--gid-owner`) could never match because in
+  `iptables -S` output `--gid-owner` comes BEFORE the comment tag — the
+  enable path was correct, the display was wrong. Now reports scoped /
+  legacy / both / open exactly.
+- [x] Doctor sync reports stopped units and legacy firewall rules
+  instead of "everything already in sync".
+- [x] DoH forwarder start prints "No running egresses — start the
+  instances first" when nothing runs; the deb-systemd-invoke warning
+  during the dnscrypt-proxy install is documented as a known packaging
+  warning, not a bug.
+Recovery on the server after merging this (hamidr already did the
+manual install): run `multifon fix` or Doctor -> 1 (repairs the three
+90-byte copies from the verified core), then menu 3 -> 3 (start-all)
+and check the units are RUNNING. Verify sizes: every instance
+`psiphon-tunnel-core-x86_64` must be 10,557,300 bytes.
+
 ## v2.3 — systemd migration (on `codr1`, on top of v2.2)
 - [x] Firejail removed entirely. Why: `apt install firejail` pulled
   ~1 GB of Recommends (xpra + the GTK/GL dev stack) for a 1.6 MB

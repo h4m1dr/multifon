@@ -116,9 +116,27 @@ doctor_sync() {
         fi
     done < <(psiphon_dirs)
 
+    # 3.5) repair broken instance binaries (v2.3.1): a wrapper / non-ELF /
+    # too-small binary (the SpherionOS /usr/bin/psiphon case) is replaced
+    # with the verified official core from /usr/bin/psiphon-tunnel-core-x86_64.
+    # Runs BEFORE the unit reconcile, or unit creation would refuse the
+    # bad binary. Counts as a fix when it repairs anything.
+    local repair_out repair_rc repaired=0
+    repair_out=$(repair_instance_binaries 2>&1); repair_rc=$?
+    echo "$repair_out"
+    if [[ "$repair_rc" -eq 0 ]]; then
+        repaired=$(echo "$repair_out" | tail -n1 | grep -oE '[0-9]+' | head -n1)
+        [[ "$repaired" =~ ^[0-9]+$ ]] && fixed=$((fixed + repaired))
+    fi
+
     # 4) reconcile units + verify ports
+    local issues=0
     while IFS= read -r d; do
         doctor_reconcile_unit "$d"
+        if ! systemd_unit_is_active "$(systemd_unit_name "$d")" 2>/dev/null; then
+            echo -e " ${YELLOW}unit not running:${RESET} $(basename "$d") ($(systemd_unit_state "$(systemd_unit_name "$d")")) — start it from menu 3 -> 3 (doctor never starts a stopped instance on its own)"
+            issues=$((issues + 1))
+        fi
         read -r http socks < <(instance_ports "$d")
         for p in "$http" "$socks"; do
             [[ "$p" =~ ^[0-9]+$ ]] || continue
@@ -132,13 +150,23 @@ doctor_sync() {
         done
     done < <(psiphon_dirs)
 
+    # 5) legacy firewall rules (uid-owner / server-wide) still present?
+    if firewall_legacy_rules_present 2>/dev/null; then
+        echo -e " ${YELLOW}legacy firewall rules present (uid-owner/server-wide) — re-enable the scoped block once (menu 8 -> 2) to migrate${RESET}"
+        issues=$((issues + 1))
+    fi
+
     validate_info_file
     info_write_system
     systemd_units_sync 2>/dev/null || true
-    if [[ "$fixed" -eq 0 ]]; then
+    # v2.3.1: "everything already in sync" is only true when nothing was
+    # fixed AND no unit is stopped AND no legacy rules remain. Stopped
+    # units are reported, not hidden — that is how the 90-byte binary hid.
+    if [[ "$fixed" -eq 0 && "$issues" -eq 0 ]]; then
         echo -e "${GREEN}Doctor: everything already in sync.${RESET}"
     else
-        echo -e "${GREEN}Doctor: fixed $fixed orphan(s).${RESET}"
+        [[ "$fixed" -gt 0 ]] && echo -e "${GREEN}Doctor: fixed $fixed orphan(s).${RESET}"
+        [[ "$issues" -gt 0 ]] && echo -e "${YELLOW}Doctor: $issues issue(s) above still need action.${RESET}"
     fi
 }
 
