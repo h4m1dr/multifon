@@ -4,6 +4,7 @@
 # sources the modules, and starts the main menu.
 # Run: ./multifon.sh  — or `multifon` after installing the command (menu 9).
 #      ./multifon.sh fix        — run the checklist fixer without the menu.
+#      ./multifon.sh install    — install the `multifon` command on PATH (no menu).
 #      ./multifon.sh start-all  — start every instance unit (systemctl).
 #      ./multifon.sh stop-all   — stop every instance unit.
 #      ./multifon.sh status     — show every instance unit's state.
@@ -38,15 +39,17 @@ unset _lib
 
 case "${1:-}" in
     fix)         multifon_fix ;;
+    install)     install_multifon_command ;;
     start-all)   systemd_start_all ;;
     stop-all)    systemd_stop_all ;;
     status)      systemd_units_status ;;
     repair-core) repair_instance_binaries ;;
     nuke)        multifon_nuke ;;
     "" )         main_loop ;;
-    *)           echo "Usage: $0 [fix|start-all|stop-all|status|repair-core|nuke]" >&2
+    *)           echo "Usage: $0 [fix|install|start-all|stop-all|status|repair-core|nuke]" >&2
                  echo "  (no argument)  open the menu" >&2
                  echo "  fix            run the checklist fixer" >&2
+                 echo "  install        install the \`multifon\` command on PATH" >&2
                  echo "  start-all      start every instance unit" >&2
                  echo "  stop-all       stop every instance unit" >&2
                  echo "  status         show every instance unit's state" >&2
