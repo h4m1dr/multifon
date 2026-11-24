@@ -6,6 +6,9 @@
 # Status meanings:
 #   ready        — works today, wired into the menu
 #   experimental — installs and mostly works, known limits, needs review
+#   test-only    — install it only to run the test procedure
+#                  (docs/TEST-WARP-TOR.md); if it fails it moves to
+#                  Phase before 6 or is dropped, never into rotation
 #   stub         — listed for the plan, not wired yet (installer refuses)
 #
 # The YAML is kept flat on purpose (2-space list items, 4-space fields)
@@ -31,13 +34,13 @@ cores:
   - name: warp
     type: wireguard-warp
     binary: wireproxy
-    binary_source: https://github.com/pufferffish/wireproxy/releases
+    binary_source: https://github.com/windtf/wireproxy/releases
     description: Cloudflare WARP over wireproxy (userspace WireGuard, no kernel interface, no root)
     socks_port_range: 1091-1095
     http_port_range: 8091-8095
     sandbox: none (userspace, no interface)
-    status: experimental
-    limits: SOCKS5 UDP is not supported by wireproxy yet (upstream TODO) — TCP and DNS-over-TCP/DoH work, raw UDP does not. Needs a WARP registration (wgcf) to generate wireproxy.conf; see Phase 4.
+    status: test-only
+    limits: SOCKS5 UDP is not supported by wireproxy yet (upstream TODO) — TCP and DNS-over-TCP/DoH work, raw UDP does not. Needs a WARP registration (wgcf) to generate wireproxy.conf; see docs/TEST-WARP-TOR.md. Marked test-only — hamidr's experience is that WARP usually does not respond (Iranian ISPs block/throttle UDP, fingerprint WireGuard, blacklist engage.cloudflareclient.com:2408; Google also mis-geolocates some Cloudflare egress IPs as Iran/Russia). Fix to try first — WARP-over-MASQUE over HTTP/2 (TCP:443). If the test fails, WARP moves to Phase before 6.
 
   - name: tor
     type: tor
@@ -47,8 +50,8 @@ cores:
     socks_port_range: 9050
     http_port_range: none
     sandbox: none
-    status: experimental
-    limits: Tor exit IPs are heavily blocked by Google and AI services (CAPTCHA/denied). Use for anonymity, not for a clean IPFighter score. High latency.
+    status: test-only
+    limits: Tor exit IPs are heavily blocked by Google and AI services (CAPTCHA/denied) — exits are publicly listed, so blocking is by design, not bad luck. Use for anonymity, not for a clean IPFighter score. High latency. Marked test-only — run docs/TEST-WARP-TOR.md; the expected outcome is that Gemini refuses it; Tor stays a fallback core only.
 
   - name: geph
     type: geph
@@ -70,4 +73,15 @@ cores:
     http_port_range: 8110-8119
     sandbox: none
     status: stub
-    limits: Needs a Firefox Account (no token or credential belongs in this repo). Headless/server use NOT verified in this patch — the upstream docs read did not pass a safety check, so no install command, proxy port, or CLI is claimed here; verify from the upstream project first, then wire it in Phase 4. 50 GB/month per account is a hard limit (Psiphon has no such cap).
+    limits: Headless/server use VERIFIED feasible (research 2026-11-24) — server variant, SOCKS5 127.0.0.1:10810, CLI + web panel 10820, multi-account rotation at 95%. Needs a Firefox Account (no token or credential belongs in this repo) and hamidr's one-time sign-in (panel first; fallback — browser sign-in on Windows/Android + backup zip via scp). Still unverified — the config.json key for the SOCKS credentials, and whether the proxy/panel ports are configurable (two instances side by side). 50 GB/month per account is a hard limit (Psiphon has no such cap).
+
+  - name: workers-vless
+    type: cloudflare-workers-vless
+    binary: none (serverless — runs on Cloudflare's edge)
+    binary_source: https://github.com/cmliu/edgetunnel
+    description: Cloudflare Workers VLESS egress (edgetunnel) — a Worker fetches as a Cloudflare edge IP, so the target site sees a foreign IP with zero server load. The new egress core from the serverless research (2026-11-24, ~/workspace/multifon-research/09-serverless-egress.md). Planned for Phase before 6, NOT implemented yet.
+    socks_port_range: none (Xray VLESS WS+TLS outbound, port 443)
+    http_port_range: none
+    sandbox: none
+    status: stub
+    limits: Free, no credit card — 100,000 requests/day, no bandwidth charge. Needs a UUID (the only auth — keep it secret) and a custom domain on his Cloudflare (reachability of *.workers.dev from Iran is unverified). UNVERIFIED whether Gemini opens through it — Google mis-geolocates some Cloudflare egress IPs as Iran/Russia (BardErrorInfo 1060). Test Gemini/Qwen/muse.ai/Flow through it before relying on it. Cloudflare can disable a Worker at any time — keep it as one egress among several, never the only one. "Masket" is MASQUE (a protocol, not a project); Deno Deploy is shutting down and Lambda needs a card — both out. Vercel is backup-only (10 GB cap).
